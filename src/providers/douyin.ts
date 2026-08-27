@@ -66,6 +66,7 @@ function itemId(item: AnyRecord): string {
 }
 
 function findTargetItem(data: AnyRecord, awemeId: string): AnyRecord | null {
+  const defaultScope = data?.__DEFAULT_SCOPE__;
   const known = [
     data?.loaderData?.["video_(id)/page"]?.videoInfoRes?.item_list?.[0],
     data?.loaderData?.["note_(id)/page"]?.videoInfoRes?.item_list?.[0],
@@ -74,15 +75,17 @@ function findTargetItem(data: AnyRecord, awemeId: string): AnyRecord | null {
     data?.videoInfoRes?.item_list?.[0],
     data?.aweme_detail,
     data?.app?.videoInfoRes?.item_list?.[0],
-    data?.app?.videoDetail
+    data?.app?.videoDetail,
+    data?.appContext?.appContext?.awemeDetail,
+    data?.awemeDetail,
+    defaultScope?.["aweme.detail"],
+    defaultScope?.awemeDetail
   ];
 
   for (const candidate of known) {
     if (candidate && itemId(candidate) === awemeId && hasPublicMedia(candidate)) return candidate;
   }
 
-  // Hydration payloads change often. Search a bounded number of public JSON nodes,
-  // but only accept an object matching the exact requested post ID and containing media.
   const stack: any[] = [data];
   let visited = 0;
   const MAX_NODES = 6000;
@@ -134,9 +137,10 @@ function parseJson(raw: string, allowPercentDecode = false): AnyRecord | null {
 function extractHydrationPayloads(html: string): AnyRecord[] {
   const payloads: AnyRecord[] = [];
 
-  const renderData = html.match(/<script[^>]+id=["']RENDER_DATA["'][^>]*>([\s\S]*?)<\/script>/i);
-  if (renderData?.[1]) {
-    const parsed = parseJson(renderData[1], true);
+  for (const id of ["RENDER_DATA", "__UNIVERSAL_DATA_FOR_REHYDRATION__"]) {
+    const match = html.match(new RegExp(`<script[^>]+id=["']${id}["'][^>]*>([\\s\\S]*?)<\\/script>`, "i"));
+    if (!match?.[1]) continue;
+    const parsed = parseJson(match[1], id === "RENDER_DATA");
     if (parsed) payloads.push(parsed);
   }
 
@@ -159,6 +163,28 @@ function parsePublicPageItem(html: string, awemeId: string): AnyRecord | null {
   return null;
 }
 
+async function fetchPublicItemInfo(awemeId: string): Promise<AnyRecord | null> {
+  try {
+    const response = await fetch(`https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=${encodeURIComponent(awemeId)}`, {
+      headers: {
+        "user-agent": MOBILE_UA,
+        referer: "https://www.iesdouyin.com/",
+        accept: "application/json",
+        "accept-language": "zh-CN,zh;q=0.9"
+      },
+      redirect: "follow"
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json() as AnyRecord;
+    const item = data?.item_list?.[0];
+    if (item && itemId(item) === awemeId && hasPublicMedia(item)) return item;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchHtml(url: string, userAgent: string, referer = "https://www.douyin.com/"): Promise<string | null> {
   try {
     const response = await fetch(url, {
@@ -178,6 +204,9 @@ async function fetchHtml(url: string, userAgent: string, referer = "https://www.
 }
 
 async function fetchItem(awemeId: string, inputUrl: URL): Promise<AnyRecord> {
+  const publicApiItem = await fetchPublicItemInfo(awemeId);
+  if (publicApiItem) return publicApiItem;
+
   const candidates = [
     { url: inputUrl.toString(), userAgent: MOBILE_UA },
     { url: `https://www.douyin.com/video/${awemeId}`, userAgent: MOBILE_UA },
