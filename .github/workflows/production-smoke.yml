@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BASE_URL: https://savedownloader.nghiep4tube.workers.dev
+      DOUYIN_ID: "7670405978537364745"
+      DOUYIN_URL: "https://www.douyin.com/jingxuan?modal_id=7670405978537364745"
     steps:
       - name: Wait for Cloudflare deployment
         shell: bash
@@ -60,16 +62,60 @@ jobs:
           set -euo pipefail
           code=$(curl -sS -o /tmp/douyin.json -w "%{http_code}" --max-time 30 \
             -H "content-type: application/json" \
-            -d '{"url":"https://www.douyin.com/jingxuan?modal_id=7670405978537364745"}' \
+            -d "{\"url\":\"$DOUYIN_URL\"}" \
             "$BASE_URL/api/resolve")
           cat /tmp/douyin.json
-          test "$code" = "200"
+          if [ "$code" != "200" ]; then
+            echo "Resolver failed; collecting safe SSR structure diagnostics..."
+            UA='Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1'
+            curl -fsSL --max-time 30 \
+              -A "$UA" \
+              -H 'Referer: https://www.douyin.com/' \
+              "https://www.iesdouyin.com/share/video/$DOUYIN_ID/?from_ssr=1" \
+              -o /tmp/douyin-share.html
+            node <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('/tmp/douyin-share.html', 'utf8');
+          const match = html.match(/window\._ROUTER_DATA\s*=\s*([\s\S]*?)<\/script>/i);
+          if (!match) {
+            console.log('DIAG: _ROUTER_DATA not found; html bytes=', html.length);
+            process.exit(0);
+          }
+          let raw = match[1].trim().replace(/;$/, '').trim();
+          let data;
+          try { data = JSON.parse(raw); } catch (e) {
+            console.log('DIAG: JSON parse failed:', e.message, 'raw bytes=', raw.length);
+            process.exit(0);
+          }
+          const loader = data?.loaderData;
+          console.log('DIAG loaderData keys:', loader && typeof loader === 'object' ? Object.keys(loader) : []);
+          const hits = [];
+          const seen = new Set();
+          function walk(node, path, depth) {
+            if (!node || typeof node !== 'object' || depth > 9 || seen.has(node)) return;
+            seen.add(node);
+            if (String(node.aweme_id || node.awemeId || '') === process.env.DOUYIN_ID) {
+              hits.push({ path, keys: Object.keys(node).slice(0, 30) });
+            }
+            if (node.videoInfoRes) {
+              hits.push({ path: path + '.videoInfoRes', keys: Object.keys(node.videoInfoRes).slice(0, 30) });
+            }
+            for (const [k, v] of Object.entries(node)) {
+              if (hits.length >= 20) break;
+              walk(v, path ? `${path}.${k}` : k, depth + 1);
+            }
+          }
+          walk(data, 'root', 0);
+          console.log('DIAG structural hits:', JSON.stringify(hits, null, 2));
+          NODE
+            exit 1
+          fi
           node -e '
             const fs = require("fs");
             const payload = JSON.parse(fs.readFileSync("/tmp/douyin.json", "utf8"));
             if (!payload.ok) throw new Error(payload.error || "Resolver returned ok=false");
             if (payload.data?.platform !== "douyin") throw new Error("Unexpected platform");
-            if (payload.data?.id !== "7670405978537364745") throw new Error("Unexpected Douyin post ID");
+            if (payload.data?.id !== process.env.DOUYIN_ID) throw new Error("Unexpected Douyin post ID");
             if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
             console.log(JSON.stringify({
               ok: true,
