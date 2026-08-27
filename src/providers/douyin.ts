@@ -3,6 +3,9 @@ const DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 
 type AnyRecord = Record<string, any>;
 
+let cachedTtwid = "";
+let ttwidExpiresAt = 0;
+
 export function isDouyinHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
   return host === "douyin.com" || host.endsWith(".douyin.com") || host === "iesdouyin.com" || host.endsWith(".iesdouyin.com");
@@ -185,6 +188,70 @@ async function fetchPublicItemInfo(awemeId: string): Promise<AnyRecord | null> {
   }
 }
 
+async function getAnonymousTtwid(): Promise<string> {
+  if (cachedTtwid && Date.now() < ttwidExpiresAt) return cachedTtwid;
+
+  try {
+    const response = await fetch("https://ttwid.bytedance.com/ttwid/union/register/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        region: "cn",
+        aid: 1768,
+        needFid: "0",
+        service: "www.ixigua.com",
+        migrate_info: { ticket: "", src: "uc" },
+        cbUrlProtocol: "https",
+        union: true
+      })
+    });
+
+    const setCookie = response.headers.get("set-cookie") || "";
+    const match = setCookie.match(/(?:^|[;,]\s*)(ttwid=[^;]+)/i) || setCookie.match(/(ttwid=[^;]+)/i);
+    if (match?.[1]) {
+      cachedTtwid = match[1];
+      ttwidExpiresAt = Date.now() + 55 * 60 * 1000;
+      return cachedTtwid;
+    }
+  } catch {
+    // The web-detail request can still be attempted without a visitor token.
+  }
+
+  return "";
+}
+
+async function fetchPublicWebDetail(awemeId: string): Promise<AnyRecord | null> {
+  try {
+    const ttwid = await getAnonymousTtwid();
+    const apiUrl = new URL("https://www.douyin.com/aweme/v1/web/aweme/detail/");
+    apiUrl.searchParams.set("aweme_id", awemeId);
+    apiUrl.searchParams.set("aid", "6383");
+    apiUrl.searchParams.set("device_platform", "webapp");
+    apiUrl.searchParams.set("channel", "channel_pc_web");
+    apiUrl.searchParams.set("pc_client_type", "1");
+    apiUrl.searchParams.set("version_code", "190500");
+    apiUrl.searchParams.set("version_name", "19.5.0");
+
+    const headers: Record<string, string> = {
+      "user-agent": DESKTOP_UA,
+      referer: "https://www.douyin.com/",
+      accept: "application/json, text/plain, */*",
+      "accept-language": "zh-CN,zh;q=0.9,en;q=0.8"
+    };
+    if (ttwid) headers.cookie = ttwid;
+
+    const response = await fetch(apiUrl, { headers, redirect: "follow" });
+    if (!response.ok) return null;
+
+    const data = await response.json() as AnyRecord;
+    const item = data?.aweme_detail;
+    if (item && itemId(item) === awemeId && hasPublicMedia(item)) return item;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchHtml(url: string, userAgent: string, referer = "https://www.douyin.com/"): Promise<string | null> {
   try {
     const response = await fetch(url, {
@@ -206,6 +273,9 @@ async function fetchHtml(url: string, userAgent: string, referer = "https://www.
 async function fetchItem(awemeId: string, inputUrl: URL): Promise<AnyRecord> {
   const publicApiItem = await fetchPublicItemInfo(awemeId);
   if (publicApiItem) return publicApiItem;
+
+  const webDetailItem = await fetchPublicWebDetail(awemeId);
+  if (webDetailItem) return webDetailItem;
 
   const candidates = [
     { url: inputUrl.toString(), userAgent: MOBILE_UA },
