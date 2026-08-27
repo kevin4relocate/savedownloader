@@ -1,8 +1,8 @@
 # SaveDownloader
 
-SaveDownloader is a lightweight multi-platform public-media resolver designed for Cloudflare Workers + Static Assets.
+SaveDownloader is a lightweight public Douyin media resolver designed for Cloudflare Workers + Static Assets.
 
-The first supported platform is Douyin. The architecture is provider-based so TikTok, Instagram, and other public-media sources can be added later without changing the frontend API contract.
+The current public release supports Douyin only.
 
 > Use SaveDownloader only for media you own or have permission to save. Private/authenticated content and DRM bypass are out of scope.
 
@@ -12,11 +12,11 @@ The first supported platform is Douyin. The architecture is provider-based so Ti
 Browser
   ├─ static HTML/CSS/JS (Workers Static Assets)
   └─ POST /api/resolve
-          └─ provider resolver
-               └─ public platform share page
+          └─ Douyin resolver
+               └─ public Douyin web data
 ```
 
-Only `/api/*` is configured to invoke Worker code. Normal page/assets requests are served as static assets.
+Only `/api/*` is configured to invoke Worker code. Normal pages and assets are served as static assets.
 
 ## Local development
 
@@ -28,7 +28,7 @@ npm run typecheck
 npm run dev
 ```
 
-Wrangler will start the site locally and route `/api/*` through the Worker.
+Wrangler starts the site locally and routes `/api/*` through the Worker.
 
 ## Deploy to Cloudflare
 
@@ -39,19 +39,19 @@ npm install
 npm run deploy
 ```
 
-The Cloudflare project uses `wrangler.jsonc` as the source of truth. Static files live in `public/`, Worker code in `src/`, and platform-specific code in `src/providers/`.
+The Cloudflare project uses `wrangler.jsonc` as the source of truth. Static files live in `public/`, Worker code in `src/`, and the Douyin resolver in `src/providers/douyin.ts`.
 
-## Adding another platform
+## Release pages
 
-1. Add a provider under `src/providers/`.
-2. Validate allowed hostnames before making outbound requests.
-3. Return the same normalized media shape used by the Douyin provider.
-4. Add provider detection in `src/index.ts`.
-5. Add a dedicated SEO landing page under `public/`.
+- `/` — SaveDownloader homepage
+- `/douyin-downloader/` — primary Douyin downloader landing page
+- `/how-to-download-douyin-videos/` — help and troubleshooting guide
+- `/about/`, `/contact/` — trust and contact pages
+- `/privacy/`, `/terms/`, `/copyright/` — legal pages
 
 ## Safety and privacy boundaries
 
-- Public share URLs only.
+- Public Douyin URLs only.
 - No account credentials.
 - No private/login-only content.
 - No DRM/access-control bypass.
