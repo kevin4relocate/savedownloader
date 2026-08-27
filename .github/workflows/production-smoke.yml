@@ -53,3 +53,32 @@ jobs:
           cat /tmp/resolve.json
           test "$code" = "422"
           grep -qi "not supported" /tmp/resolve.json
+
+      - name: Check live Douyin resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/douyin.json -w "%{http_code}" --max-time 30 \
+            -H "content-type: application/json" \
+            -d '{"url":"https://www.douyin.com/jingxuan?modal_id=7670405978537364745"}' \
+            "$BASE_URL/api/resolve")
+          cat /tmp/douyin.json
+          test "$code" = "200"
+          node -e '
+            const fs = require("fs");
+            const payload = JSON.parse(fs.readFileSync("/tmp/douyin.json", "utf8"));
+            if (!payload.ok) throw new Error(payload.error || "Resolver returned ok=false");
+            if (payload.data?.platform !== "douyin") throw new Error("Unexpected platform");
+            if (payload.data?.id !== "7670405978537364745") throw new Error("Unexpected Douyin post ID");
+            if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
+            console.log(JSON.stringify({
+              ok: true,
+              platform: payload.data.platform,
+              id: payload.data.id,
+              type: payload.data.type,
+              title: payload.data.title,
+              author: payload.data.author,
+              hasVideo: Boolean(payload.data.videoUrl),
+              imageCount: payload.data.images?.length || 0
+            }, null, 2));
+          '
