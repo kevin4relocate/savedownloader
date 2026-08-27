@@ -1,0 +1,55 @@
+name: Production Smoke Test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: https://savedownloader.nghiep4tube.workers.dev
+    steps:
+      - name: Wait for Cloudflare deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in {1..18}; do
+            if curl -fsS --max-time 15 "$BASE_URL/api/health" >/tmp/health.json; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "Deployment not ready yet (attempt $i/18)"
+            sleep 10
+          done
+          echo "Production endpoint did not become healthy in time"
+          exit 1
+
+      - name: Check homepage
+        run: |
+          curl -fsS --max-time 20 "$BASE_URL/" | grep -qi "SaveDownloader"
+
+      - name: Check Douyin landing page
+        run: |
+          curl -fsS --max-time 20 "$BASE_URL/douyin-downloader/" | grep -qi "Douyin"
+
+      - name: Check robots and sitemap
+        run: |
+          curl -fsS --max-time 20 "$BASE_URL/robots.txt" | grep -qi "User-agent"
+          curl -fsS --max-time 20 "$BASE_URL/sitemap.xml" | grep -qi "urlset"
+
+      - name: Check resolver rejects unsupported hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/resolve.json -w "%{http_code}" --max-time 20 \
+            -H "content-type: application/json" \
+            -d '{"url":"https://example.com/video/123"}' \
+            "$BASE_URL/api/resolve")
+          cat /tmp/resolve.json
+          test "$code" = "422"
+          grep -qi "Douyin" /tmp/resolve.json
