@@ -13,22 +13,34 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BASE_URL: https://savedownloader.nghiep4tube.workers.dev
+      COMMIT_TIME: ${{ github.event.head_commit.timestamp }}
       DOUYIN_ID: "7670405978537364745"
       DOUYIN_URL: "https://www.douyin.com/jingxuan?modal_id=7670405978537364745"
     steps:
-      - name: Wait for Cloudflare deployment
+      - name: Wait for active Cloudflare deployment
         shell: bash
         run: |
           set -euo pipefail
-          for i in {1..18}; do
+          for i in {1..30}; do
             if curl -fsS --max-time 15 "$BASE_URL/api/health" >/tmp/health.json; then
               cat /tmp/health.json
-              exit 0
+              if node <<'NODE'
+          const fs = require('fs');
+          const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
+          const deployedAt = Date.parse(health?.deployment?.timestamp || '');
+          const commitAt = Date.parse(process.env.COMMIT_TIME || '');
+          const currentEnough = Number.isFinite(deployedAt) && (!Number.isFinite(commitAt) || deployedAt >= commitAt);
+          process.exit(health?.version === '0.2.0' && currentEnough ? 0 : 1);
+          NODE
+              then
+                echo "Active Worker version is current enough for this commit."
+                exit 0
+              fi
             fi
-            echo "Deployment not ready yet (attempt $i/18)"
+            echo "Cloudflare has not activated this commit yet (attempt $i/30)"
             sleep 10
           done
-          echo "Production endpoint did not become healthy in time"
+          echo "Cloudflare deployment did not become current in time"
           exit 1
 
       - name: Check homepage
@@ -65,56 +77,7 @@ jobs:
             -d "{\"url\":\"$DOUYIN_URL\"}" \
             "$BASE_URL/api/resolve")
           cat /tmp/douyin.json
-          if [ "$code" != "200" ]; then
-            echo "Resolver failed; collecting safe SSR structure diagnostics..."
-            UA='Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1'
-            curl -fsSL --max-time 30 \
-              -A "$UA" \
-              -H 'Referer: https://www.douyin.com/' \
-              "https://www.iesdouyin.com/share/video/$DOUYIN_ID/?from_ssr=1" \
-              -o /tmp/douyin-share.html
-            node <<'NODE'
-          const fs = require('fs');
-          const html = fs.readFileSync('/tmp/douyin-share.html', 'utf8');
-          const match = html.match(/window\._ROUTER_DATA\s*=\s*([\s\S]*?)<\/script>/i);
-          if (!match) {
-            console.log('DIAG: _ROUTER_DATA not found; html bytes=', html.length);
-            process.exit(0);
-          }
-          let raw = match[1].trim().replace(/;$/, '').trim();
-          let data;
-          try { data = JSON.parse(raw); } catch (e) {
-            console.log('DIAG: JSON parse failed:', e.message, 'raw bytes=', raw.length);
-            process.exit(0);
-          }
-          const loader = data?.loaderData;
-          console.log('DIAG loaderData keys:', loader && typeof loader === 'object' ? Object.keys(loader) : []);
-          if (loader && typeof loader === 'object') {
-            for (const [key, value] of Object.entries(loader)) {
-              const summary = {
-                key,
-                type: Array.isArray(value) ? 'array' : typeof value,
-                keys: value && typeof value === 'object' ? Object.keys(value).slice(0, 50) : [],
-                stringLength: typeof value === 'string' ? value.length : undefined,
-                stringPrefix: typeof value === 'string' ? value.slice(0, 160) : undefined
-              };
-              console.log('DIAG loader entry:', JSON.stringify(summary));
-              if (value && typeof value === 'object') {
-                for (const [childKey, childValue] of Object.entries(value)) {
-                  console.log('DIAG child:', JSON.stringify({
-                    parent: key,
-                    childKey,
-                    type: Array.isArray(childValue) ? 'array' : typeof childValue,
-                    keys: childValue && typeof childValue === 'object' ? Object.keys(childValue).slice(0, 40) : [],
-                    value: ['number','boolean'].includes(typeof childValue) ? childValue : undefined
-                  }));
-                }
-              }
-            }
-          }
-          NODE
-            exit 1
-          fi
+          test "$code" = "200"
           node -e '
             const fs = require("fs");
             const payload = JSON.parse(fs.readFileSync("/tmp/douyin.json", "utf8"));
@@ -122,5 +85,14 @@ jobs:
             if (payload.data?.platform !== "douyin") throw new Error("Unexpected platform");
             if (payload.data?.id !== process.env.DOUYIN_ID) throw new Error("Unexpected Douyin post ID");
             if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
-            console.log(JSON.stringify({ ok: true, platform: payload.data.platform, id: payload.data.id, type: payload.data.type, title: payload.data.title, author: payload.data.author, hasVideo: Boolean(payload.data.videoUrl), imageCount: payload.data.images?.length || 0 }, null, 2));
+            console.log(JSON.stringify({
+              ok: true,
+              platform: payload.data.platform,
+              id: payload.data.id,
+              type: payload.data.type,
+              title: payload.data.title,
+              author: payload.data.author,
+              hasVideo: Boolean(payload.data.videoUrl),
+              imageCount: payload.data.images?.length || 0
+            }, null, 2));
           '
