@@ -30,7 +30,7 @@ jobs:
           const deployedAt = Date.parse(health?.deployment?.timestamp || '');
           const commitAt = Date.parse(process.env.COMMIT_TIME || '');
           const currentEnough = Number.isFinite(deployedAt) && (!Number.isFinite(commitAt) || deployedAt >= commitAt);
-          process.exit(health?.version === '0.2.0' && currentEnough ? 0 : 1);
+          process.exit(health?.version === '0.2.1' && currentEnough ? 0 : 1);
           NODE
               then
                 echo "Active Worker version is current enough for this commit."
@@ -65,7 +65,7 @@ jobs:
             grep -qi 'rel="canonical"' <<<"$html"
             grep -qi '<h1' <<<"$html"
             if grep -Eqi 'name="robots"[^>]*content="[^"]*noindex' <<<"$html"; then
-              echo "Unexpected noindex on $path"
+              echo "Unexpected HTML noindex on $path"
               exit 1
             fi
           done
@@ -80,6 +80,24 @@ jobs:
             echo "Homepage should only advertise Douyin in this release."
             exit 1
           fi
+
+      - name: Check security and preview indexing headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSI --max-time 20 "$BASE_URL/" >/tmp/home.headers
+          cat /tmp/home.headers
+          grep -Eqi '^x-content-type-options:[[:space:]]*nosniff' /tmp/home.headers
+          grep -Eqi '^x-frame-options:[[:space:]]*DENY' /tmp/home.headers
+          grep -Eqi '^referrer-policy:' /tmp/home.headers
+          grep -Eqi '^permissions-policy:' /tmp/home.headers
+          grep -Eqi '^content-security-policy:' /tmp/home.headers
+          grep -Eqi '^x-robots-tag:.*noindex' /tmp/home.headers
+
+          curl -fsSI --max-time 20 "$BASE_URL/api/health" >/tmp/api.headers
+          cat /tmp/api.headers
+          grep -Eqi '^x-content-type-options:[[:space:]]*nosniff' /tmp/api.headers
+          grep -Eqi '^x-robots-tag:.*noindex' /tmp/api.headers
 
       - name: Check crawl assets and sitemap
         shell: bash
