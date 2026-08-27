@@ -52,4 +52,4 @@ jobs:
             "$BASE_URL/api/resolve")
           cat /tmp/resolve.json
           test "$code" = "422"
-          grep -qi "Douyin" /tmp/resolve.json
+          grep -qi "not supported" /tmp/resolve.json
