@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SaveDownloader — Download Public Douyin Videos</title>
+  <meta name="description" content="SaveDownloader helps you save public Douyin videos and media you own or have permission to download. Fast, simple, and no account required.">
+  <link rel="canonical" href="https://savedownloader.com/">
+  <meta property="og:title" content="SaveDownloader — Public Video Downloader">
+  <meta property="og:description" content="Paste a public Douyin link and get the available media in seconds.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://savedownloader.com/">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"SaveDownloader","url":"https://savedownloader.com/","applicationCategory":"MultimediaApplication","operatingSystem":"Any","description":"A web utility for saving public media you own or have permission to download."}</script>
+</head>
+<body>
+<header class="wrap nav">
+  <a class="brand" href="/">Save<span>Downloader</span></a>
+  <nav class="navlinks" aria-label="Main navigation"><a href="#how">How it works</a><a href="#faq">FAQ</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a></nav>
+</header>
+<main>
+  <section class="hero wrap">
+    <span class="eyebrow">Douyin supported now</span>
+    <h1>Save public videos in a few clicks.</h1>
+    <p>Paste a public Douyin share link. SaveDownloader finds the media exposed by the public share page without asking for your account or password.</p>
+    <div class="tool">
+      <form class="formrow" data-downloader-form>
+        <input class="urlbox" name="url" type="text" inputmode="url" autocomplete="off" maxlength="2048" placeholder="Paste a Douyin link…" aria-label="Douyin URL" required>
+        <button class="btn" type="submit">Get video</button>
+      </form>
+      <p class="smallprint">Only download media you own or have permission to save. Private and login-only content is not supported.</p>
+      <div class="status" data-status role="status" aria-live="polite"></div>
+      <div class="result" data-result>
+        <img class="cover" data-cover alt="Video preview">
+        <div class="meta"><h3 data-title>Douyin media</h3><p>by <span data-author>creator</span></p><div class="actions" data-actions></div><p class="smallprint">Media links can expire. Save the file shortly after resolving it.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="platforms wrap">
+    <h2 class="section-title">One downloader, more platforms later</h2>
+    <p class="section-sub">The site is built with a provider architecture so new public-media sources can be added without rebuilding the product.</p>
+    <div class="grid">
+      <article class="card"><span class="pill">Available</span><h3>Douyin</h3><p>Resolve public Douyin video and image-post share links.</p></article>
+      <article class="card"><span class="pill soon">Planned</span><h3>TikTok</h3><p>Public TikTok media support can be added as a separate provider.</p></article>
+      <article class="card"><span class="pill soon">Planned</span><h3>Instagram</h3><p>Public Instagram media support is planned for a later release.</p></article>
+    </div>
+  </section>
+
+  <section class="content wrap" id="how"><div class="contentbox">
+    <h2>How to use SaveDownloader</h2>
+    <div class="steps"><div class="step"><strong>Copy a public share link.</strong> Open the public Douyin post and copy its share URL.</div><div class="step"><strong>Paste the link above.</strong> SaveDownloader checks the public share data and identifies the available media.</div><div class="step"><strong>Open or save the media.</strong> Use the result link while it is still active; CDN links may be temporary.</div></div>
+
+    <h2>Built for speed and privacy</h2>
+    <p>SaveDownloader does not require a Douyin login, password, browser extension, or app install. The website sends the public share link to its resolver only when you ask it to process a link. The site does not intentionally store downloaded video files.</p>
+    <p>The downloader is intended for public media that you created, own, or are authorized to save. It does not support private accounts, login-only posts, DRM bypass, or access-control circumvention.</p>
+
+    <div class="faq" id="faq">
+      <h2>Frequently asked questions</h2>
+      <details><summary>Do I need to install anything?</summary><p>No. SaveDownloader runs in a normal web browser.</p></details>
+      <details><summary>Does SaveDownloader need my Douyin account?</summary><p>No. The resolver is designed for public share links and does not ask for your username or password.</p></details>
+      <details><summary>Why does a media link sometimes stop working?</summary><p>Douyin and its media delivery network may issue temporary URLs. Resolve the share link again if an old media URL has expired.</p></details>
+      <details><summary>Can I download private videos?</summary><p>No. Private, authenticated, or otherwise access-controlled content is outside the scope of this service.</p></details>
+      <details><summary>Will TikTok and Instagram be supported?</summary><p>The architecture is ready for additional providers, but each platform will be added only after its public-media flow is separately tested.</p></details>
+    </div>
+  </div></section>
+</main>
+<footer><div class="wrap foot"><div>© 2026 SaveDownloader. Independent utility; not affiliated with Douyin or ByteDance.</div><div class="footlinks"><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="https://github.com/kevin4relocate/savedownloader/issues" rel="noopener">Contact</a></div></div></footer>
+<script src="/assets/app.js" defer></script>
+</body>
+</html>
