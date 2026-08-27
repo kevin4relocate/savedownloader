@@ -25,7 +25,7 @@ if(form){
 
   const downloadDirect=async(url,filename,control)=>{
     const oldText=control.textContent;
-    control.setAttribute('aria-disabled','true');
+    control.disabled=true;
     control.textContent='Preparing download…';
     setStatus('Preparing your download directly from the media server…','loading');
     try{
@@ -46,7 +46,7 @@ if(form){
       setStatus('Direct download was blocked by the media server. Opening the video instead.','error');
       window.open(url,'_blank','noopener,noreferrer');
     }finally{
-      control.removeAttribute('aria-disabled');
+      control.disabled=false;
       control.textContent=oldText;
     }
   };
@@ -63,16 +63,15 @@ if(form){
     actions.replaceChildren();
 
     if(data.videoUrl){
-      const link=document.createElement('a');
-      link.className='action';
-      link.href=data.videoUrl;
-      link.textContent='Download video';
-      link.addEventListener('click',(event)=>{
-        event.preventDefault();
-        if(link.getAttribute('aria-disabled')==='true')return;
-        downloadDirect(data.videoUrl,safeFilename(mediaTitle,'mp4'),link);
+      const downloadButton=document.createElement('button');
+      downloadButton.type='button';
+      downloadButton.className='action';
+      downloadButton.textContent='Download video';
+      downloadButton.addEventListener('click',()=>{
+        if(downloadButton.disabled)return;
+        downloadDirect(data.videoUrl,safeFilename(mediaTitle,'mp4'),downloadButton);
       });
-      actions.append(link);
+      actions.append(downloadButton);
     }
     if(Array.isArray(data.images)){
       data.images.forEach((url,index)=>{
