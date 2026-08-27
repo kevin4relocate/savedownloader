@@ -12,7 +12,11 @@ type Env = {
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
-  "x-content-type-options": "nosniff"
+  "x-content-type-options": "nosniff",
+  "x-frame-options": "DENY",
+  "referrer-policy": "no-referrer",
+  "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+  "x-robots-tag": "noindex, nofollow, noarchive"
 };
 
 function json(data: unknown, status = 200) {
@@ -58,7 +62,7 @@ export default {
       return json({
         ok: true,
         service: "savedownloader",
-        version: "0.2.0",
+        version: "0.2.1",
         providers: ["douyin"],
         deployment: {
           id: env.CF_VERSION_METADATA?.id ?? null,
