@@ -89,24 +89,29 @@ jobs:
           }
           const loader = data?.loaderData;
           console.log('DIAG loaderData keys:', loader && typeof loader === 'object' ? Object.keys(loader) : []);
-          const hits = [];
-          const seen = new Set();
-          function walk(node, path, depth) {
-            if (!node || typeof node !== 'object' || depth > 9 || seen.has(node)) return;
-            seen.add(node);
-            if (String(node.aweme_id || node.awemeId || '') === process.env.DOUYIN_ID) {
-              hits.push({ path, keys: Object.keys(node).slice(0, 30) });
-            }
-            if (node.videoInfoRes) {
-              hits.push({ path: path + '.videoInfoRes', keys: Object.keys(node.videoInfoRes).slice(0, 30) });
-            }
-            for (const [k, v] of Object.entries(node)) {
-              if (hits.length >= 20) break;
-              walk(v, path ? `${path}.${k}` : k, depth + 1);
+          if (loader && typeof loader === 'object') {
+            for (const [key, value] of Object.entries(loader)) {
+              const summary = {
+                key,
+                type: Array.isArray(value) ? 'array' : typeof value,
+                keys: value && typeof value === 'object' ? Object.keys(value).slice(0, 50) : [],
+                stringLength: typeof value === 'string' ? value.length : undefined,
+                stringPrefix: typeof value === 'string' ? value.slice(0, 160) : undefined
+              };
+              console.log('DIAG loader entry:', JSON.stringify(summary));
+              if (value && typeof value === 'object') {
+                for (const [childKey, childValue] of Object.entries(value)) {
+                  console.log('DIAG child:', JSON.stringify({
+                    parent: key,
+                    childKey,
+                    type: Array.isArray(childValue) ? 'array' : typeof childValue,
+                    keys: childValue && typeof childValue === 'object' ? Object.keys(childValue).slice(0, 40) : [],
+                    value: ['number','boolean'].includes(typeof childValue) ? childValue : undefined
+                  }));
+                }
+              }
             }
           }
-          walk(data, 'root', 0);
-          console.log('DIAG structural hits:', JSON.stringify(hits, null, 2));
           NODE
             exit 1
           fi
@@ -117,14 +122,5 @@ jobs:
             if (payload.data?.platform !== "douyin") throw new Error("Unexpected platform");
             if (payload.data?.id !== process.env.DOUYIN_ID) throw new Error("Unexpected Douyin post ID");
             if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
-            console.log(JSON.stringify({
-              ok: true,
-              platform: payload.data.platform,
-              id: payload.data.id,
-              type: payload.data.type,
-              title: payload.data.title,
-              author: payload.data.author,
-              hasVideo: Boolean(payload.data.videoUrl),
-              imageCount: payload.data.images?.length || 0
-            }, null, 2));
+            console.log(JSON.stringify({ ok: true, platform: payload.data.platform, id: payload.data.id, type: payload.data.type, title: payload.data.title, author: payload.data.author, hasVideo: Boolean(payload.data.videoUrl), imageCount: payload.data.images?.length || 0 }, null, 2));
           '
