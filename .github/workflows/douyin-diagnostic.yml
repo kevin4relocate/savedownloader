@@ -1,0 +1,100 @@
+name: Douyin Diagnostic
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      DOUYIN_ID: "7670405978537364745"
+      DOUYIN_URL: "https://www.douyin.com/jingxuan?modal_id=7670405978537364745"
+    steps:
+      - name: Inspect public item-info API
+        shell: bash
+        run: |
+          set -euo pipefail
+          UA='Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1'
+          meta=$(curl -sS -L --max-time 20 -A "$UA" -H 'Referer: https://www.iesdouyin.com/' -H 'Accept: application/json' \
+            -o /tmp/iteminfo.out -w '%{http_code}|%{content_type}|%{size_download}|%{url_effective}' \
+            "https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=$DOUYIN_ID")
+          echo "ITEMINFO_META=$meta"
+          node <<'NODE'
+          const fs = require('fs');
+          const text = fs.readFileSync('/tmp/iteminfo.out','utf8');
+          console.log('ITEMINFO_BYTES=', Buffer.byteLength(text));
+          try {
+            const j = JSON.parse(text);
+            console.log('ITEMINFO_KEYS=', Object.keys(j).slice(0,30));
+            console.log('ITEMINFO_STATUS_CODE=', j.status_code ?? null);
+            console.log('ITEMINFO_STATUS_MSG=', j.status_msg ?? null);
+            console.log('ITEMINFO_COUNT=', Array.isArray(j.item_list) ? j.item_list.length : null);
+            const item = j.item_list?.[0];
+            console.log('ITEMINFO_ID=', item?.aweme_id ?? null);
+            console.log('ITEMINFO_HAS_VIDEO=', Boolean(item?.video?.play_addr?.url_list?.length));
+          } catch (e) {
+            console.log('ITEMINFO_JSON_PARSE=', e.message);
+            console.log('ITEMINFO_PREFIX=', text.slice(0,160).replace(/\s+/g,' '));
+          }
+          NODE
+
+      - name: Inspect anonymous ttwid and web-detail API
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sS --max-time 20 -D /tmp/token.headers -o /tmp/token.body \
+            -H 'Content-Type: application/json' \
+            -d '{"region":"cn","aid":1768,"needFid":"0","service":"www.ixigua.com","migrate_info":{"ticket":"","src":"uc"},"cbUrlProtocol":"https","union":true}' \
+            'https://ttwid.bytedance.com/ttwid/union/register/' || true
+          token=$(grep -oiE 'ttwid=[^;]+' /tmp/token.headers | head -n1 || true)
+          echo "TTWID_RECEIVED=$([ -n "$token" ] && echo yes || echo no)"
+          echo "TTWID_RESPONSE_LINE=$(head -n1 /tmp/token.headers | tr -d '\r')"
+          headers=(-H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36' -H 'Referer: https://www.douyin.com/' -H 'Accept: application/json, text/plain, */*')
+          if [ -n "$token" ]; then headers+=(-H "Cookie: $token"); fi
+          meta=$(curl -sS -L --max-time 20 "${headers[@]}" \
+            -o /tmp/detail.out -w '%{http_code}|%{content_type}|%{size_download}|%{url_effective}' \
+            "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=$DOUYIN_ID&aid=6383&device_platform=webapp&channel=channel_pc_web&pc_client_type=1&version_code=190500&version_name=19.5.0")
+          echo "DETAIL_META=$meta"
+          node <<'NODE'
+          const fs = require('fs');
+          const text = fs.readFileSync('/tmp/detail.out','utf8');
+          console.log('DETAIL_BYTES=', Buffer.byteLength(text));
+          try {
+            const j = JSON.parse(text);
+            console.log('DETAIL_KEYS=', Object.keys(j).slice(0,30));
+            console.log('DETAIL_STATUS_CODE=', j.status_code ?? null);
+            console.log('DETAIL_STATUS_MSG=', j.status_msg ?? null);
+            console.log('DETAIL_HAS_AWEME=', Boolean(j.aweme_detail));
+            console.log('DETAIL_ID=', j.aweme_detail?.aweme_id ?? null);
+            console.log('DETAIL_HAS_VIDEO=', Boolean(j.aweme_detail?.video?.play_addr?.url_list?.length));
+          } catch (e) {
+            console.log('DETAIL_JSON_PARSE=', e.message);
+            console.log('DETAIL_PREFIX=', text.slice(0,160).replace(/\s+/g,' '));
+          }
+          NODE
+
+      - name: Inspect public page hydration markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          UA='Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1'
+          for label in original normalized; do
+            if [ "$label" = original ]; then url="$DOUYIN_URL"; else url="https://www.douyin.com/video/$DOUYIN_ID"; fi
+            meta=$(curl -sS -L --max-time 20 -A "$UA" -H 'Accept-Language: zh-CN,zh;q=0.9' \
+              -o "/tmp/$label.html" -w '%{http_code}|%{content_type}|%{size_download}|%{url_effective}' "$url")
+            echo "PAGE_${label^^}_META=$meta"
+            LABEL="$label" node <<'NODE'
+          const fs = require('fs');
+          const label = process.env.LABEL;
+          const html = fs.readFileSync(`/tmp/${label}.html`, 'utf8');
+          const markers = ['RENDER_DATA','__UNIVERSAL_DATA_FOR_REHYDRATION__','_ROUTER_DATA','_SSR_DATA','_SSR_HYDRATED_DATA'];
+          console.log(`PAGE_${label.toUpperCase()}_MARKERS=`, markers.filter(x => html.includes(x)));
+          console.log(`PAGE_${label.toUpperCase()}_HAS_TARGET_ID=`, html.includes(process.env.DOUYIN_ID));
+          console.log(`PAGE_${label.toUpperCase()}_HAS_CAPTCHA_WORD=`, /captcha|verify|验证|安全验证/i.test(html));
+          console.log(`PAGE_${label.toUpperCase()}_TITLE=`, (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s+/g,' ').slice(0,160));
+          NODE
+          done
