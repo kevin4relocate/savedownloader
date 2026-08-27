@@ -1,0 +1,56 @@
+import { assertPublicDouyinUrl, resolveDouyin } from "./providers/douyin";
+
+type AnyRecord = Record<string, any>;
+
+const JSON_HEADERS = {
+  "content-type": "application/json; charset=utf-8",
+  "cache-control": "no-store",
+  "x-content-type-options": "nosniff"
+};
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
+}
+
+function extractFirstUrl(input: string): string | null {
+  return input.match(/https?:\/\/[^\s]+/i)?.[0]?.replace(/[),.;]+$/, "") ?? null;
+}
+
+async function handleResolve(request: Request): Promise<Response> {
+  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) return json({ error: "Expected application/json" }, 415);
+
+  let body: AnyRecord;
+  try {
+    body = await request.json() as AnyRecord;
+  } catch {
+    return json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const rawInput = typeof body?.url === "string" ? body.url.trim() : "";
+  if (!rawInput || rawInput.length > 2048) return json({ error: "Please enter a valid public media link." }, 400);
+  const extracted = extractFirstUrl(rawInput) ?? rawInput;
+
+  try {
+    const url = new URL(extracted);
+    if (url.hostname === "douyin.com" || url.hostname.endsWith(".douyin.com") || url.hostname === "iesdouyin.com" || url.hostname.endsWith(".iesdouyin.com")) {
+      return json({ ok: true, data: await resolveDouyin(assertPublicDouyinUrl(extracted)) });
+    }
+    return json({ ok: false, error: "This platform is not supported yet." }, 422);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to resolve this link.";
+    return json({ ok: false, error: message }, 422);
+  }
+}
+
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/health") {
+      return json({ ok: true, service: "savedownloader", version: "0.1.0", providers: ["douyin"] });
+    }
+    if (url.pathname === "/api/resolve") return handleResolve(request);
+    return json({ error: "Not found" }, 404);
+  }
+};
