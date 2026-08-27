@@ -34,7 +34,11 @@ async function resolveAwemeId(inputUrl: URL): Promise<string> {
 
   const response = await fetch(inputUrl, {
     redirect: "follow",
-    headers: { "user-agent": MOBILE_UA, accept: "text/html,application/xhtml+xml" }
+    headers: {
+      "user-agent": MOBILE_UA,
+      accept: "text/html,application/xhtml+xml",
+      "accept-language": "zh-CN,zh;q=0.9"
+    }
   });
 
   const finalUrl = assertPublicDouyinUrl(response.url);
@@ -43,45 +47,126 @@ async function resolveAwemeId(inputUrl: URL): Promise<string> {
   return id;
 }
 
-function findItem(routerData: AnyRecord): AnyRecord | null {
-  const loaderData = routerData?.loaderData;
-  if (!loaderData || typeof loaderData !== "object") return null;
+function firstUrl(value: any): string | null {
+  const list = value?.url_list ?? value?.urlList;
+  return Array.isArray(list) && typeof list[0] === "string" ? list[0] : null;
+}
 
-  const knownPages = [loaderData["video_(id)/page"], loaderData["note_(id)/page"]];
-  for (const page of knownPages) {
-    const item = page?.videoInfoRes?.item_list?.[0];
-    if (item) return item;
+function hasPublicMedia(item: AnyRecord): boolean {
+  return Boolean(
+    firstUrl(item?.video?.play_addr) ||
+    firstUrl(item?.video?.play_addr_h264) ||
+    firstUrl(item?.video?.download_addr) ||
+    (Array.isArray(item?.images) && item.images.some((image: AnyRecord) => firstUrl(image)))
+  );
+}
+
+function itemId(item: AnyRecord): string {
+  return String(item?.aweme_id ?? item?.awemeId ?? item?.aweme_id_str ?? "");
+}
+
+function findTargetItem(data: AnyRecord, awemeId: string): AnyRecord | null {
+  const known = [
+    data?.loaderData?.["video_(id)/page"]?.videoInfoRes?.item_list?.[0],
+    data?.loaderData?.["note_(id)/page"]?.videoInfoRes?.item_list?.[0],
+    data?.loaderData?.["video_(id)/page"]?.aweme_detail,
+    data?.loaderData?.["note_(id)/page"]?.aweme_detail,
+    data?.videoInfoRes?.item_list?.[0],
+    data?.aweme_detail,
+    data?.app?.videoInfoRes?.item_list?.[0],
+    data?.app?.videoDetail
+  ];
+
+  for (const candidate of known) {
+    if (candidate && itemId(candidate) === awemeId && hasPublicMedia(candidate)) return candidate;
   }
 
-  for (const value of Object.values(loaderData) as AnyRecord[]) {
-    const item = value?.videoInfoRes?.item_list?.[0];
-    if (item) return item;
+  // Hydration payloads change often. Search a bounded number of public JSON nodes,
+  // but only accept an object matching the exact requested post ID and containing media.
+  const stack: any[] = [data];
+  let visited = 0;
+  const MAX_NODES = 6000;
+
+  while (stack.length && visited < MAX_NODES) {
+    const node = stack.pop();
+    if (!node || typeof node !== "object") continue;
+    visited += 1;
+
+    if (!Array.isArray(node) && itemId(node) === awemeId && hasPublicMedia(node)) return node;
+
+    if (Array.isArray(node)) {
+      for (let i = Math.min(node.length, 300) - 1; i >= 0; i -= 1) {
+        const child = node[i];
+        if (child && typeof child === "object") stack.push(child);
+      }
+    } else {
+      const values = Object.values(node);
+      for (let i = values.length - 1; i >= 0; i -= 1) {
+        const child = values[i];
+        if (child && typeof child === "object") stack.push(child);
+      }
+    }
   }
 
   return null;
 }
 
-function parseRouterItem(html: string): AnyRecord | null {
-  const match = html.match(/window\._ROUTER_DATA\s*=\s*([\s\S]*?)<\/script>/i);
-  if (!match?.[1]) return null;
+function parseJson(raw: string, allowPercentDecode = false): AnyRecord | null {
+  let text = raw.trim();
+  if (text.endsWith(";")) text = text.slice(0, -1).trim();
 
-  let raw = match[1].trim();
-  if (raw.endsWith(";")) raw = raw.slice(0, -1).trim();
+  if (allowPercentDecode && /%[0-9A-Fa-f]{2}/.test(text)) {
+    try {
+      text = decodeURIComponent(text);
+    } catch {
+      // Fall through and try the original text.
+    }
+  }
 
   try {
-    return findItem(JSON.parse(raw));
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? parsed : null;
   } catch {
     return null;
   }
 }
 
-async function fetchHtml(url: string, userAgent: string, referer: string): Promise<string | null> {
+function extractHydrationPayloads(html: string): AnyRecord[] {
+  const payloads: AnyRecord[] = [];
+
+  const renderData = html.match(/<script[^>]+id=["']RENDER_DATA["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (renderData?.[1]) {
+    const parsed = parseJson(renderData[1], true);
+    if (parsed) payloads.push(parsed);
+  }
+
+  for (const variable of ["_ROUTER_DATA", "_SSR_DATA", "_SSR_HYDRATED_DATA"]) {
+    const escaped = variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = html.match(new RegExp(`window\\.${escaped}\\s*=\\s*([\\s\\S]*?)<\\/script>`, "i"));
+    if (!match?.[1]) continue;
+    const parsed = parseJson(match[1]);
+    if (parsed) payloads.push(parsed);
+  }
+
+  return payloads;
+}
+
+function parsePublicPageItem(html: string, awemeId: string): AnyRecord | null {
+  for (const payload of extractHydrationPayloads(html)) {
+    const item = findTargetItem(payload, awemeId);
+    if (item) return item;
+  }
+  return null;
+}
+
+async function fetchHtml(url: string, userAgent: string, referer = "https://www.douyin.com/"): Promise<string | null> {
   try {
     const response = await fetch(url, {
       headers: {
         "user-agent": userAgent,
         referer,
-        accept: "text/html,application/xhtml+xml"
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "zh-CN,zh;q=0.9"
       },
       redirect: "follow"
     });
@@ -92,41 +177,34 @@ async function fetchHtml(url: string, userAgent: string, referer: string): Promi
   }
 }
 
-async function fetchItem(awemeId: string): Promise<AnyRecord> {
+async function fetchItem(awemeId: string, inputUrl: URL): Promise<AnyRecord> {
   const candidates = [
-    {
-      url: `https://www.iesdouyin.com/share/video/${awemeId}/?from_ssr=1`,
-      userAgent: MOBILE_UA,
-      referer: "https://www.douyin.com/"
-    },
+    { url: inputUrl.toString(), userAgent: MOBILE_UA },
+    { url: `https://www.douyin.com/video/${awemeId}`, userAgent: MOBILE_UA },
+    { url: `https://www.iesdouyin.com/share/video/${awemeId}/?from_ssr=1`, userAgent: MOBILE_UA },
     {
       url: `https://m.ixigua.com/douyin/share/video/${awemeId}?aweme_type=107&schema_type=1&utm_source=copy&utm_campaign=client_share&utm_medium=android&app=aweme`,
-      userAgent: DESKTOP_UA,
-      referer: "https://www.douyin.com/"
+      userAgent: DESKTOP_UA
     },
-    {
-      url: `https://www.iesdouyin.com/share/note/${awemeId}/?from_ssr=1`,
-      userAgent: MOBILE_UA,
-      referer: "https://www.douyin.com/"
-    }
+    { url: `https://www.iesdouyin.com/share/note/${awemeId}/?from_ssr=1`, userAgent: MOBILE_UA }
   ];
 
+  const tried = new Set<string>();
   for (const candidate of candidates) {
-    const html = await fetchHtml(candidate.url, candidate.userAgent, candidate.referer);
+    if (tried.has(candidate.url)) continue;
+    tried.add(candidate.url);
+
+    const html = await fetchHtml(candidate.url, candidate.userAgent);
     if (!html) continue;
-    const item = parseRouterItem(html);
+
+    const item = parsePublicPageItem(html, awemeId);
     if (item) return item;
   }
 
   throw new Error("This public post could not be parsed.");
 }
 
-function firstUrl(value: any): string | null {
-  const list = value?.url_list;
-  return Array.isArray(list) && typeof list[0] === "string" ? list[0] : null;
-}
-
-function formatItem(item: AnyRecord, sourceUrl: string) {
+function formatItem(item: AnyRecord, sourceUrl: string, awemeId: string) {
   const images = Array.isArray(item?.images)
     ? item.images.map((image: AnyRecord) => firstUrl(image)).filter(Boolean)
     : [];
@@ -141,10 +219,10 @@ function formatItem(item: AnyRecord, sourceUrl: string) {
 
   return {
     platform: "douyin",
-    id: String(item?.aweme_id ?? ""),
+    id: itemId(item) || awemeId,
     type: videoUrl ? "video" : "images",
-    title: String(item?.desc ?? "Douyin video"),
-    author: String(item?.author?.nickname ?? "Douyin creator"),
+    title: String(item?.desc ?? item?.description ?? "Douyin video"),
+    author: String(item?.author?.nickname ?? item?.author?.name ?? "Douyin creator"),
     cover,
     videoUrl,
     images,
@@ -155,6 +233,6 @@ function formatItem(item: AnyRecord, sourceUrl: string) {
 
 export async function resolveDouyin(inputUrl: URL) {
   const awemeId = await resolveAwemeId(inputUrl);
-  const item = await fetchItem(awemeId);
-  return formatItem(item, inputUrl.toString());
+  const item = await fetchItem(awemeId, inputUrl);
+  return formatItem(item, inputUrl.toString(), awemeId);
 }
