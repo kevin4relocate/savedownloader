@@ -43,18 +43,70 @@ jobs:
           echo "Cloudflare deployment did not become current in time"
           exit 1
 
-      - name: Check homepage
+      - name: Check indexable release pages
+        shell: bash
         run: |
-          curl -fsS --max-time 20 "$BASE_URL/" | grep -qi "SaveDownloader"
+          set -euo pipefail
+          pages=(
+            "/"
+            "/douyin-downloader/"
+            "/how-to-download-douyin-videos/"
+            "/about/"
+            "/contact/"
+            "/privacy/"
+            "/terms/"
+            "/copyright/"
+          )
+          for path in "${pages[@]}"; do
+            echo "Checking $path"
+            html=$(curl -fsS --max-time 20 "$BASE_URL$path")
+            grep -qi '<title>' <<<"$html"
+            grep -qi 'name="description"' <<<"$html"
+            grep -qi 'rel="canonical"' <<<"$html"
+            grep -qi '<h1' <<<"$html"
+            if grep -Eqi 'name="robots"[^>]*content="[^"]*noindex' <<<"$html"; then
+              echo "Unexpected noindex on $path"
+              exit 1
+            fi
+          done
 
-      - name: Check Douyin landing page
+      - name: Check Douyin-only public positioning
+        shell: bash
         run: |
-          curl -fsS --max-time 20 "$BASE_URL/douyin-downloader/" | grep -qi "Douyin"
+          set -euo pipefail
+          html=$(curl -fsS --max-time 20 "$BASE_URL/")
+          grep -qi 'Douyin' <<<"$html"
+          if grep -Eqi 'TikTok|Instagram' <<<"$html"; then
+            echo "Homepage should only advertise Douyin in this release."
+            exit 1
+          fi
 
-      - name: Check robots and sitemap
+      - name: Check crawl assets and sitemap
+        shell: bash
         run: |
-          curl -fsS --max-time 20 "$BASE_URL/robots.txt" | grep -qi "User-agent"
-          curl -fsS --max-time 20 "$BASE_URL/sitemap.xml" | grep -qi "urlset"
+          set -euo pipefail
+          robots=$(curl -fsS --max-time 20 "$BASE_URL/robots.txt")
+          grep -qi 'User-agent:' <<<"$robots"
+          grep -qi 'Disallow: /api/' <<<"$robots"
+          grep -qi 'Sitemap: https://savedownloader.com/sitemap.xml' <<<"$robots"
+
+          sitemap=$(curl -fsS --max-time 20 "$BASE_URL/sitemap.xml")
+          grep -qi '<urlset' <<<"$sitemap"
+          for path in '' 'douyin-downloader/' 'how-to-download-douyin-videos/' 'about/' 'contact/' 'privacy/' 'terms/' 'copyright/'; do
+            grep -Fq "https://savedownloader.com/$path" <<<"$sitemap"
+          done
+
+          curl -fsS --max-time 20 "$BASE_URL/favicon.svg" | grep -qi '<svg'
+          curl -fsS --max-time 20 "$BASE_URL/site.webmanifest" | grep -qi 'SaveDownloader'
+
+      - name: Check 404 behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/not-found.html -w "%{http_code}" --max-time 20 "$BASE_URL/this-page-does-not-exist-release-check")
+          test "$code" = "404"
+          grep -qi 'noindex' /tmp/not-found.html
+          grep -qi 'Page not found' /tmp/not-found.html
 
       - name: Check resolver rejects unsupported hosts
         shell: bash
