@@ -2,6 +2,7 @@
   const MEASUREMENT_ID = "G-07B50P20QM";
   const CONSENT_KEY = "sd_analytics_consent_v1";
   const productionHosts = new Set(["savedownloader.com", "www.savedownloader.com"]);
+  const analyticsFreePaths = new Set(["/privacy/", "/cookies/"]);
   let consent = null;
   let analyticsLoaded = false;
 
@@ -12,7 +13,7 @@
 
   window.dataLayer = window.dataLayer || [];
   window.gtag = function gtag() {
-    if (consent !== "granted") return;
+    if (consent !== "granted" || analyticsFreePaths.has(window.location.pathname)) return;
     window.dataLayer.push(arguments);
   };
 
@@ -26,7 +27,13 @@
   };
 
   const loadAnalytics = () => {
-    if (analyticsLoaded || consent !== "granted" || !productionHosts.has(window.location.hostname)) return;
+    if (
+      analyticsLoaded ||
+      consent !== "granted" ||
+      analyticsFreePaths.has(window.location.pathname) ||
+      !productionHosts.has(window.location.hostname)
+    ) return;
+
     analyticsLoaded = true;
     window.dataLayer.push(["js", new Date()]);
     window.dataLayer.push(["config", MEASUREMENT_ID]);
