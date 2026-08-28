@@ -14,12 +14,14 @@ if(form){
 
   const safeText=(value,fallback='')=>typeof value==='string'&&value.trim()?value.trim():fallback;
 
+  const platformName=(platform)=>platform==='tiktok'?'TikTok':platform==='douyin'?'Douyin':'Public';
+
   const safeFilename=(value,extension)=>{
-    const base=safeText(value,'douyin-video')
+    const base=safeText(value,'savedownloader-media')
       .replace(/[\\/:*?"<>|\u0000-\u001F]/g,' ')
       .replace(/\s+/g,' ')
       .trim()
-      .slice(0,120)||'douyin-video';
+      .slice(0,120)||'savedownloader-media';
     return `${base}.${extension}`;
   };
 
@@ -43,7 +45,7 @@ if(form){
       setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);
       clearStatus();
     }catch(error){
-      setStatus('Direct download was blocked by the media server. Opening the video instead.','error');
+      setStatus('Direct download was blocked by the media server. Opening the media instead.','error');
       window.open(url,'_blank','noopener,noreferrer');
     }finally{
       control.disabled=false;
@@ -56,9 +58,10 @@ if(form){
     const title=result.querySelector('[data-title]');
     const author=result.querySelector('[data-author]');
     const actions=result.querySelector('[data-actions]');
-    const mediaTitle=safeText(data.title,'Douyin media');
+    const platform=platformName(data.platform);
+    const mediaTitle=safeText(data.title,`${platform} media`);
     title.textContent=mediaTitle;
-    author.textContent=safeText(data.author,'Douyin creator');
+    author.textContent=safeText(data.author,`${platform} creator`);
     if(data.cover){cover.src=data.cover;cover.alt=`Preview of ${mediaTitle}`;cover.hidden=false;}else{cover.hidden=true;}
     actions.replaceChildren();
 
@@ -90,10 +93,10 @@ if(form){
   form.addEventListener('submit',async(event)=>{
     event.preventDefault();
     const url=input.value.trim();
-    if(!url){setStatus('Paste a Douyin link first.','error');return;}
+    if(!url){setStatus('Paste a public Douyin or TikTok link first.','error');return;}
     button.disabled=true;
     result.classList.remove('show');
-    setStatus('Checking the public Douyin link…','loading');
+    setStatus('Checking the public media link…','loading');
     try{
       const response=await fetch('/api/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url})});
       const payload=await response.json();
