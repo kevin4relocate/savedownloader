@@ -1,0 +1,107 @@
+name: TikTok Live Smoke
+
+on:
+  push:
+    branches: [test/tiktok-live-smoke]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      TIKTOK_ID: "6718335390845095173"
+      TIKTOK_URL: "https://www.tiktok.com/@scout2015/video/6718335390845095173"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Start local Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup npx wrangler dev --local --port 8787 >/tmp/wrangler.log 2>&1 &
+          echo $! >/tmp/wrangler.pid
+          for i in {1..30}; do
+            if curl -fsS --max-time 5 http://127.0.0.1:8787/api/health >/tmp/health.json; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/wrangler.log || true
+          exit 1
+
+      - name: Check TikTok provider is enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
+          if (!health?.ok) throw new Error('Health check failed');
+          if (!Array.isArray(health.providers) || !health.providers.includes('tiktok')) {
+            throw new Error('TikTok provider is missing from /api/health');
+          }
+          console.log(JSON.stringify(health, null, 2));
+          NODE
+
+      - name: Check TikTok landing page
+        shell: bash
+        run: |
+          set -euo pipefail
+          html=$(curl -fsS --max-time 10 http://127.0.0.1:8787/tiktok-downloader/)
+          grep -qi '<h1>Download public TikTok videos online.</h1>' <<<"$html"
+          grep -qi 'data-tiktok-downloader-form' <<<"$html"
+
+      - name: Resolve official public TikTok example
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/tiktok.json -w "%{http_code}" --max-time 45 \
+            -H "content-type: application/json" \
+            -d "{\"url\":\"$TIKTOK_URL\"}" \
+            http://127.0.0.1:8787/api/resolve)
+          cat /tmp/tiktok.json
+          test "$code" = "200"
+          node <<'NODE'
+          const fs = require('fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/tiktok.json', 'utf8'));
+          if (!payload?.ok) throw new Error(payload?.error || 'Resolver returned ok=false');
+          if (payload.data?.platform !== 'tiktok') throw new Error('Unexpected platform');
+          if (payload.data?.id && payload.data.id !== process.env.TIKTOK_ID) throw new Error('Unexpected TikTok post ID');
+          if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error('No public media URL returned');
+          console.log(JSON.stringify({
+            ok: true,
+            platform: payload.data.platform,
+            id: payload.data.id,
+            type: payload.data.type,
+            title: payload.data.title,
+            author: payload.data.author,
+            hasVideo: Boolean(payload.data.videoUrl),
+            imageCount: payload.data.images?.length || 0
+          }, null, 2));
+          NODE
+
+      - name: Show Worker log on failure
+        if: failure()
+        run: cat /tmp/wrangler.log || true
+
+      - name: Stop local Worker
+        if: always()
+        run: |
+          if [ -f /tmp/wrangler.pid ]; then kill "$(cat /tmp/wrangler.pid)" || true; fi
