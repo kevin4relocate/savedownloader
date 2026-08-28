@@ -174,7 +174,7 @@ export default {
       return json({
         ok: true,
         service: "savedownloader",
-        version: "0.3.3",
+        version: "0.4.0",
         providers: ["douyin", "tiktok"],
         deployment: {
           id: env.CF_VERSION_METADATA?.id ?? null,
