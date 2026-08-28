@@ -1,0 +1,39 @@
+name: Page Layout Check
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'test/**'
+      - 'release/**'
+      - 'fix/**'
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  layout:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Check page width roles
+        run: |
+          set -euo pipefail
+          test -f public/assets/page-layout.css
+          grep -Fq '.contentbox-wide{max-width:1120px}' public/assets/page-layout.css
+          grep -Fq '.contentbox-contact{max-width:1000px}' public/assets/page-layout.css
+          grep -Fq '.reading-column{max-width:860px' public/assets/page-layout.css
+
+          for page in public/guides/index.html public/about/index.html public/contact/index.html; do
+            grep -Fq '/assets/page-layout.css' "$page"
+          done
+
+          grep -Fq 'contentbox contentbox-wide' public/guides/index.html
+          grep -Fq 'class="reading-column"' public/guides/index.html
+          grep -Fq 'content wrap page-reading' public/about/index.html
+          grep -Fq 'contentbox contentbox-contact' public/contact/index.html
+          grep -Fq 'class="reading-column"' public/contact/index.html
