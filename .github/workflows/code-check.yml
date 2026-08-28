@@ -6,6 +6,8 @@ on:
       - main
       - 'feature/**'
       - 'test/**'
+      - 'release/**'
+      - 'fix/**'
   pull_request:
     branches: [main]
 
@@ -26,5 +28,13 @@ jobs:
           cache-dependency-path: package.json
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Typecheck
+      - name: Typecheck Worker
         run: npm run typecheck
+      - name: Check browser JavaScript
+        run: |
+          node --check public/assets/app.js
+          node --check public/assets/analytics.js
+      - name: Check Vercel TikTok functions
+        run: |
+          node --check vercel-tiktok-api/api/health.js
+          node --check vercel-tiktok-api/api/download.js
