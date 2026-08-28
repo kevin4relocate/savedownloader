@@ -14,7 +14,9 @@ if(form){
   const openOriginal=result.querySelector('[data-open-original]');
   const progress=result.querySelector('[data-download-progress]');
   const INSTAGRAM_DOWNLOAD_API='/api/download/instagram';
+  const ZIP32_MAX=0xffffffff;
   let currentData=null;
+  let crcTable=null;
 
   const setStatus=(message,type)=>{
     status.textContent=message;
@@ -30,17 +32,29 @@ if(form){
     if(typeof window.gtag!=='function')return;
     window.gtag('event',name,params);
   };
-  const delay=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
 
   const downloadUrl=(sourceUrl,index)=>`${INSTAGRAM_DOWNLOAD_API}?url=${encodeURIComponent(sourceUrl)}&item=${index}`;
 
   const triggerDownload=(sourceUrl,index)=>{
     const anchor=document.createElement('a');
     anchor.href=downloadUrl(sourceUrl,index);
+    anchor.download='';
     anchor.style.display='none';
     document.body.append(anchor);
     anchor.click();
     anchor.remove();
+  };
+
+  const triggerBlobDownload=(blob,filename)=>{
+    const objectUrl=URL.createObjectURL(blob);
+    const anchor=document.createElement('a');
+    anchor.href=objectUrl;
+    anchor.download=filename;
+    anchor.style.display='none';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);
   };
 
   const startDownload=(sourceUrl,index,mediaType,control)=>{
@@ -52,7 +66,7 @@ if(form){
     setProgress(`Preparing ${mediaType} ${index+1} for download…`);
     triggerDownload(sourceUrl,index);
     setTimeout(()=>{
-      setProgress('Download started. If nothing happens, allow downloads for this site and try again.');
+      setProgress('Download started.');
       control.disabled=false;
       control.textContent=oldText;
     },1200);
@@ -138,6 +152,141 @@ if(form){
     return card;
   };
 
+  const getCrcTable=()=>{
+    if(crcTable)return crcTable;
+    crcTable=new Uint32Array(256);
+    for(let n=0;n<256;n+=1){
+      let c=n;
+      for(let k=0;k<8;k+=1)c=(c&1)?0xedb88320^(c>>>1):c>>>1;
+      crcTable[n]=c>>>0;
+    }
+    return crcTable;
+  };
+
+  const crc32=(bytes)=>{
+    const table=getCrcTable();
+    let crc=0xffffffff;
+    for(let i=0;i<bytes.length;i+=1)crc=table[(crc^bytes[i])&0xff]^(crc>>>8);
+    return (crc^0xffffffff)>>>0;
+  };
+
+  const dosDateTime=(date=new Date())=>{
+    const year=Math.max(1980,date.getFullYear());
+    return {
+      time:((date.getHours()&31)<<11)|((date.getMinutes()&63)<<5)|((Math.floor(date.getSeconds()/2))&31),
+      date:(((year-1980)&127)<<9)|(((date.getMonth()+1)&15)<<5)|(date.getDate()&31)
+    };
+  };
+
+  const zipLocalHeader=(entry)=>{
+    const header=new Uint8Array(30+entry.nameBytes.length);
+    const view=new DataView(header.buffer);
+    view.setUint32(0,0x04034b50,true);
+    view.setUint16(4,20,true);
+    view.setUint16(6,0x0800,true);
+    view.setUint16(8,0,true);
+    view.setUint16(10,entry.time,true);
+    view.setUint16(12,entry.date,true);
+    view.setUint32(14,entry.crc,true);
+    view.setUint32(18,entry.size,true);
+    view.setUint32(22,entry.size,true);
+    view.setUint16(26,entry.nameBytes.length,true);
+    view.setUint16(28,0,true);
+    header.set(entry.nameBytes,30);
+    return header;
+  };
+
+  const zipCentralHeader=(entry)=>{
+    const header=new Uint8Array(46+entry.nameBytes.length);
+    const view=new DataView(header.buffer);
+    view.setUint32(0,0x02014b50,true);
+    view.setUint16(4,20,true);
+    view.setUint16(6,20,true);
+    view.setUint16(8,0x0800,true);
+    view.setUint16(10,0,true);
+    view.setUint16(12,entry.time,true);
+    view.setUint16(14,entry.date,true);
+    view.setUint32(16,entry.crc,true);
+    view.setUint32(20,entry.size,true);
+    view.setUint32(24,entry.size,true);
+    view.setUint16(28,entry.nameBytes.length,true);
+    view.setUint16(30,0,true);
+    view.setUint16(32,0,true);
+    view.setUint16(34,0,true);
+    view.setUint16(36,0,true);
+    view.setUint32(38,0,true);
+    view.setUint32(42,entry.offset,true);
+    header.set(entry.nameBytes,46);
+    return header;
+  };
+
+  const zipEndRecord=(entryCount,centralSize,centralOffset)=>{
+    const record=new Uint8Array(22);
+    const view=new DataView(record.buffer);
+    view.setUint32(0,0x06054b50,true);
+    view.setUint16(4,0,true);
+    view.setUint16(6,0,true);
+    view.setUint16(8,entryCount,true);
+    view.setUint16(10,entryCount,true);
+    view.setUint32(12,centralSize,true);
+    view.setUint32(16,centralOffset,true);
+    view.setUint16(20,0,true);
+    return record;
+  };
+
+  const extensionFor=(contentType,mediaType)=>{
+    const type=(contentType||'').toLowerCase();
+    if(type.includes('video/mp4'))return 'mp4';
+    if(type.includes('image/png'))return 'png';
+    if(type.includes('image/webp'))return 'webp';
+    if(type.includes('image/avif'))return 'avif';
+    return mediaType==='video'?'mp4':'jpg';
+  };
+
+  const safeId=(value)=>String(value||'post').replace(/[^0-9A-Za-z_-]/g,'')||'post';
+
+  const buildZip=async(data)=>{
+    const encoder=new TextEncoder();
+    const entries=[];
+    let offset=0;
+    let totalSize=0;
+
+    for(let index=0;index<data.media.length;index+=1){
+      setProgress(`Fetching item ${index+1} of ${data.media.length} for ZIP…`);
+      const response=await fetch(downloadUrl(data.sourceUrl,index),{cache:'no-store'});
+      if(!response.ok){
+        let detail='';
+        try{detail=(await response.json())?.error||'';}catch{}
+        throw new Error(detail||`Could not fetch item ${index+1}.`);
+      }
+      const blob=await response.blob();
+      if(blob.size>ZIP32_MAX)throw new Error(`Item ${index+1} is too large for a standard ZIP. Download it individually.`);
+      totalSize+=blob.size;
+      if(totalSize>ZIP32_MAX)throw new Error('This carousel is too large for one ZIP. Download the items individually.');
+      const bytes=new Uint8Array(await blob.arrayBuffer());
+      const ext=extensionFor(response.headers.get('content-type'),data.media[index].type);
+      const filename=`instagram-${safeId(data.id)}-${String(index+1).padStart(2,'0')}.${ext}`;
+      const nameBytes=encoder.encode(filename);
+      const stamp=dosDateTime();
+      const entry={blob,nameBytes,size:blob.size,crc:crc32(bytes),time:stamp.time,date:stamp.date,offset};
+      entries.push(entry);
+      offset+=30+nameBytes.length+blob.size;
+      if(offset>ZIP32_MAX)throw new Error('This carousel is too large for one ZIP. Download the items individually.');
+    }
+
+    const parts=[];
+    for(const entry of entries){parts.push(zipLocalHeader(entry),entry.blob);}
+    const centralOffset=offset;
+    let centralSize=0;
+    for(const entry of entries){
+      const header=zipCentralHeader(entry);
+      parts.push(header);
+      centralSize+=header.length;
+    }
+    parts.push(zipEndRecord(entries.length,centralSize,centralOffset));
+    return new Blob(parts,{type:'application/zip'});
+  };
+
   const resetResult=()=>{
     currentData=null;
     result.classList.remove('show');
@@ -187,36 +336,37 @@ if(form){
     }
 
     downloadAllButton.hidden=media.length<2;
-    downloadAllButton.textContent=`Download all ${media.length}`;
+    downloadAllButton.textContent=`Download all (.zip)`;
     setProgress('',false);
     result.classList.add('show');
     result.scrollIntoView({behavior:'smooth',block:'nearest'});
   };
 
   downloadAllButton.addEventListener('click',async()=>{
-    if(!currentData||downloadAllButton.disabled)return;
-    const media=currentData.media;
-    const sourceUrl=currentData.sourceUrl;
-    if(!sourceUrl||!media.length)return;
-
+    if(!currentData||downloadAllButton.disabled||currentData.media.length<2)return;
     downloadAllButton.disabled=true;
     const oldText=downloadAllButton.textContent;
+    downloadAllButton.textContent='Preparing ZIP…';
     trackEvent('download_instagram_all',{
-      media_count:media.length,
-      image_count:media.filter((item)=>item.type==='image').length,
-      video_count:media.filter((item)=>item.type==='video').length,
-      delivery:'cloudflare'
+      media_count:currentData.media.length,
+      image_count:currentData.media.filter((item)=>item.type==='image').length,
+      video_count:currentData.media.filter((item)=>item.type==='video').length,
+      delivery:'cloudflare',
+      format:'zip'
     });
-
-    for(let index=0;index<media.length;index+=1){
-      setProgress(`Starting download ${index+1} of ${media.length}… Your browser may ask to allow multiple downloads.`);
-      triggerDownload(sourceUrl,index);
-      if(index<media.length-1)await delay(650);
+    try{
+      const zip=await buildZip(currentData);
+      setProgress('ZIP ready. Starting download…');
+      triggerBlobDownload(zip,`instagram-${safeId(currentData.id)}.zip`);
+      setProgress(`Downloaded ZIP with ${currentData.media.length} items.`);
+    }catch(error){
+      const message=error instanceof Error?error.message:'Unable to create the ZIP download.';
+      setProgress(message);
+      setStatus(message,'error');
+    }finally{
+      downloadAllButton.disabled=false;
+      downloadAllButton.textContent=oldText;
     }
-
-    setProgress(`Started ${media.length} downloads. If your browser blocked some files, allow multiple downloads and use the item buttons for any missing files.`);
-    downloadAllButton.disabled=false;
-    downloadAllButton.textContent=oldText;
   });
 
   form.addEventListener('submit',async(event)=>{
