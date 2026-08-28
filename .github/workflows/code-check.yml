@@ -34,10 +34,40 @@ jobs:
         run: |
           node --check public/assets/app.js
           node --check public/assets/analytics.js
-      - name: Check Vercel TikTok functions
+          node --check public/assets/instagram.js
+      - name: Check TikTok Vercel functions
         run: |
           node --check vercel-tiktok-api/api/health.js
           node --check vercel-tiktok-api/api/download.js
+      - name: Check Instagram Cloudflare-only delivery
+        run: |
+          set -euo pipefail
+          test ! -e vercel-instagram-api
+          grep -Fq "'/api/download/instagram'" public/assets/instagram.js
+          ! grep -Fq 'vercel.app' public/assets/instagram.js
+          grep -Fq 'handleInstagramDownload' src/index.ts
+          grep -Fq 'url.pathname === "/api/download/instagram"' src/index.ts
+          grep -Fq 'instagramDelivery: "cloudflare"' src/index.ts
+          grep -Fq 'x-savedownloader-delivery' src/index.ts
+          grep -Fq 'Download all (.zip)' public/assets/instagram.js
+      - name: Check Instagram shares the provider layout
+        run: |
+          set -euo pipefail
+          test -f public/instagram-downloader/index.html
+          test -f public/assets/media-gallery.css
+          grep -Fq '<section class="hero wrap" id="download">' public/instagram-downloader/index.html
+          grep -Fq 'class="provider-title"' public/instagram-downloader/index.html
+          grep -Fq 'class="hero-copy"' public/instagram-downloader/index.html
+          grep -Fq 'class="tool"' public/instagram-downloader/index.html
+          grep -Fq 'class="formrow"' public/instagram-downloader/index.html
+          grep -Fq '/assets/media-gallery.css' public/instagram-downloader/index.html
+          grep -Fq 'class="result media-result"' public/instagram-downloader/index.html
+          grep -Fq 'data-media-gallery' public/instagram-downloader/index.html
+          grep -Fq 'data-download-all' public/instagram-downloader/index.html
+          ! grep -Fq 'instagram-hero' public/instagram-downloader/index.html
+          ! grep -Fq 'instagram-hero' public/assets/instagram.js
+          ! grep -Fq 'document.createElement('"'"'style'"'"')' public/assets/instagram.js
+          ! grep -Eq '\.instagram[-_]' public/assets/media-gallery.css
       - name: Check core SEO and consent structure
         run: |
           set -euo pipefail
@@ -45,9 +75,11 @@ jobs:
             public/index.html
             public/douyin-downloader/index.html
             public/tiktok-downloader/index.html
+            public/instagram-downloader/index.html
             public/guides/index.html
             public/how-to-download-douyin-videos/index.html
             public/how-to-download-tiktok-videos/index.html
+            public/how-to-download-instagram-videos-and-photos/index.html
             public/contact/index.html
             public/privacy/index.html
             public/cookies/index.html
@@ -64,9 +96,11 @@ jobs:
             'https://savedownloader.com/'
             'https://savedownloader.com/douyin-downloader/'
             'https://savedownloader.com/tiktok-downloader/'
+            'https://savedownloader.com/instagram-downloader/'
             'https://savedownloader.com/guides/'
             'https://savedownloader.com/how-to-download-douyin-videos/'
             'https://savedownloader.com/how-to-download-tiktok-videos/'
+            'https://savedownloader.com/how-to-download-instagram-videos-and-photos/'
             'https://savedownloader.com/contact/'
             'https://savedownloader.com/privacy/'
             'https://savedownloader.com/cookies/'
@@ -77,6 +111,13 @@ jobs:
             grep -Fq "<loc>${url}</loc>" public/sitemap.xml
           done
           grep -Fq 'Sitemap: https://savedownloader.com/sitemap.xml' public/robots.txt
+          grep -Fq '/instagram-downloader/' public/index.html
+          grep -Fq '/how-to-download-instagram-videos-and-photos/' public/index.html
+          grep -Fq '/instagram-downloader/' public/guides/index.html
+          grep -Fq '/how-to-download-instagram-videos-and-photos/' public/guides/index.html
+          grep -Fq '/how-to-download-instagram-videos-and-photos/' public/instagram-downloader/index.html
+          ! grep -Fqi 'preview version' public/instagram-downloader/index.html
+          ! grep -Fqi 'scope of this preview' public/instagram-downloader/index.html
           grep -Fq 'contact@savedownloader.com' public/contact/index.html
           ! grep -Fq 'github.com/kevin4relocate/savedownloader/issues/new' public/contact/index.html
           grep -Fq 'sd_analytics_consent_v1' public/assets/analytics.js
@@ -89,9 +130,11 @@ jobs:
             'public/index.html',
             'public/douyin-downloader/index.html',
             'public/tiktok-downloader/index.html',
+            'public/instagram-downloader/index.html',
             'public/guides/index.html',
             'public/how-to-download-douyin-videos/index.html',
-            'public/how-to-download-tiktok-videos/index.html'
+            'public/how-to-download-tiktok-videos/index.html',
+            'public/how-to-download-instagram-videos-and-photos/index.html'
           ];
           for (const file of files) {
             const html = fs.readFileSync(file, 'utf8');
