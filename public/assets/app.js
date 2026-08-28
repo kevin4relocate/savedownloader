@@ -26,7 +26,25 @@ if(form){
     return `${base}.${extension}`;
   };
 
-  const downloadDirect=async(url,filename,control)=>{
+  const startBackendDownload=(url,control,message)=>{
+    const oldText=control.textContent;
+    control.disabled=true;
+    control.textContent='Starting download…';
+    setStatus(message,'loading');
+    const anchor=document.createElement('a');
+    anchor.href=url;
+    anchor.style.display='none';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(()=>{
+      clearStatus();
+      control.disabled=false;
+      control.textContent=oldText;
+    },1500);
+  };
+
+  const downloadDirect=async(url,filename,control,fallback)=>{
     const oldText=control.textContent;
     control.disabled=true;
     control.textContent='Preparing download…';
@@ -46,31 +64,38 @@ if(form){
       setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);
       clearStatus();
     }catch(error){
+      if(typeof fallback==='function'){
+        control.disabled=false;
+        control.textContent=oldText;
+        fallback();
+        return;
+      }
       setStatus('Direct download was blocked by the media server. Opening the media instead.','error');
       window.open(url,'_blank','noopener,noreferrer');
     }finally{
-      control.disabled=false;
-      control.textContent=oldText;
+      if(control.disabled){
+        control.disabled=false;
+        control.textContent=oldText;
+      }
     }
   };
 
   const downloadTikTokViaBackend=(sourceUrl,control)=>{
     if(!sourceUrl){setStatus('The original TikTok post URL is missing. Resolve the post again.','error');return;}
-    const oldText=control.textContent;
-    control.disabled=true;
-    control.textContent='Starting download…';
-    setStatus('Preparing the TikTok video for download…','loading');
-    const anchor=document.createElement('a');
-    anchor.href=`${TIKTOK_DOWNLOAD_API}?url=${encodeURIComponent(sourceUrl)}`;
-    anchor.style.display='none';
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(()=>{
-      clearStatus();
-      control.disabled=false;
-      control.textContent=oldText;
-    },1500);
+    startBackendDownload(
+      `${TIKTOK_DOWNLOAD_API}?url=${encodeURIComponent(sourceUrl)}`,
+      control,
+      'Preparing the TikTok video for download…'
+    );
+  };
+
+  const downloadDouyinViaBackend=(sourceUrl,control)=>{
+    if(!sourceUrl){setStatus('The original Douyin post URL is missing. Resolve the post again.','error');return;}
+    startBackendDownload(
+      `/api/download/douyin?url=${encodeURIComponent(sourceUrl)}`,
+      control,
+      'Douyin blocked the direct media request. Retrying through SaveDownloader…'
+    );
   };
 
   const render=(data)=>{
@@ -94,6 +119,15 @@ if(form){
         if(downloadButton.disabled)return;
         if(data.platform==='tiktok'){
           downloadTikTokViaBackend(data.sourceUrl,downloadButton);
+          return;
+        }
+        if(data.platform==='douyin'){
+          downloadDirect(
+            data.videoUrl,
+            safeFilename(mediaTitle,'mp4'),
+            downloadButton,
+            ()=>downloadDouyinViaBackend(data.sourceUrl,downloadButton)
+          );
           return;
         }
         downloadDirect(data.videoUrl,safeFilename(mediaTitle,'mp4'),downloadButton);
