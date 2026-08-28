@@ -14,8 +14,8 @@ jobs:
       PREVIEW_URL: https://savedownloader.nghiep4tube.workers.dev
       DOUYIN_ID: "7670405978537364745"
       DOUYIN_URL: "https://www.douyin.com/jingxuan?modal_id=7670405978537364745"
-      TIKTOK_ID: "6718335390845095173"
-      TIKTOK_URL: "https://www.tiktok.com/@scout2015/video/6718335390845095173"
+      TIKTOK_ID: "7678292608577309972"
+      TIKTOK_URL: "https://www.tiktok.com/@86times/video/7678292608577309972"
     steps:
       - name: Check production health
         shell: bash
@@ -25,7 +25,7 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
-          if (health?.version !== '0.3.0') throw new Error(`Unexpected version: ${health?.version}`);
+          if (health?.version !== '0.3.2') throw new Error(`Unexpected version: ${health?.version}`);
           if (!Array.isArray(health?.providers) || !health.providers.includes('douyin') || !health.providers.includes('tiktok')) {
             throw new Error('Expected Douyin and TikTok providers');
           }
@@ -90,7 +90,6 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsSI --max-time 20 "$BASE_URL/" >/tmp/home.headers
-          cat /tmp/home.headers
           grep -Eqi '^x-content-type-options:[[:space:]]*nosniff' /tmp/home.headers
           grep -Eqi '^x-frame-options:[[:space:]]*DENY' /tmp/home.headers
           grep -Eqi '^referrer-policy:' /tmp/home.headers
@@ -102,11 +101,9 @@ jobs:
           fi
 
           curl -fsSI --max-time 20 "$PREVIEW_URL/" >/tmp/preview.headers
-          cat /tmp/preview.headers
           grep -Eqi '^x-robots-tag:.*noindex' /tmp/preview.headers
 
           curl -fsSI --max-time 20 "$BASE_URL/api/health" >/tmp/api.headers
-          cat /tmp/api.headers
           grep -Eqi '^x-content-type-options:[[:space:]]*nosniff' /tmp/api.headers
           grep -Eqi '^x-robots-tag:.*noindex' /tmp/api.headers
 
@@ -186,3 +183,17 @@ jobs:
             if (payload.data?.id && payload.data.id !== process.env.TIKTOK_ID) throw new Error("Unexpected TikTok post ID");
             if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
           '
+
+      - name: Check TikTok streamed download fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          encoded=$(node -p 'encodeURIComponent(process.env.TIKTOK_URL)')
+          code=$(curl -sS -D /tmp/tiktok-download.headers -o /tmp/tiktok-download.bin -w "%{http_code}" \
+            --range 0-1023 --max-time 60 \
+            "$BASE_URL/api/download/tiktok?url=$encoded")
+          cat /tmp/tiktok-download.headers
+          test "$code" = "206" || test "$code" = "200"
+          grep -Eqi '^content-disposition:[[:space:]]*attachment;' /tmp/tiktok-download.headers
+          grep -Eqi '^content-type:[[:space:]]*(video/|application/octet-stream)' /tmp/tiktok-download.headers
+          test -s /tmp/tiktok-download.bin

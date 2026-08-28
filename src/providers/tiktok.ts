@@ -7,6 +7,21 @@ export function isTikTokHost(hostname: string): boolean {
   return host === "tiktok.com" || host.endsWith(".tiktok.com");
 }
 
+export function isTikTokMediaHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  const allowedRoots = [
+    "tiktok.com",
+    "tiktokcdn.com",
+    "tiktokcdn-us.com",
+    "tiktokv.com",
+    "byteoversea.com",
+    "ibytedtos.com",
+    "muscdn.com",
+    "byteicdn.com"
+  ];
+  return allowedRoots.some((root) => host === root || host.endsWith(`.${root}`));
+}
+
 export function assertPublicTikTokUrl(value: string): URL {
   const url = new URL(value);
   if (url.protocol !== "https:" || !isTikTokHost(url.hostname)) {
@@ -157,34 +172,61 @@ async function fetchPublicPage(url: URL): Promise<{ html: string; finalUrl: URL 
   return { html: await response.text(), finalUrl };
 }
 
+function normalizeMediaUrl(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol === "http:") url.protocol = "https:";
+    if (url.protocol !== "https:" || !isTikTokMediaHost(url.hostname)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function firstString(value: unknown): string | null {
-  if (typeof value === "string" && value.startsWith("https://")) return value;
-  return null;
+  return normalizeMediaUrl(value);
+}
+
+function urlList(value: any): string[] {
+  const list = value?.urlList ?? value?.UrlList ?? value?.url_list;
+  if (!Array.isArray(list)) return [];
+  const urls: string[] = [];
+  for (const entry of list) {
+    const url = normalizeMediaUrl(entry);
+    if (url && !urls.includes(url)) urls.push(url);
+  }
+  return urls;
 }
 
 function firstUrlList(value: any): string | null {
-  const list = value?.urlList ?? value?.UrlList ?? value?.url_list;
-  if (!Array.isArray(list)) return null;
-  for (const entry of list) {
-    const url = firstString(entry);
-    if (url) return url;
-  }
-  return null;
+  return urlList(value)[0] ?? null;
 }
 
-function bestVideoUrl(video: AnyRecord): string | null {
-  const direct = firstString(video?.downloadAddr) || firstString(video?.playAddr);
-  if (direct) return direct;
+function videoCandidates(video: AnyRecord): string[] {
+  const urls: string[] = [];
+  const add = (url: string | null) => {
+    if (url && !urls.includes(url)) urls.push(url);
+  };
+
+  add(firstString(video?.downloadAddr));
+  for (const url of urlList(video?.downloadAddr)) add(url);
+  add(firstString(video?.playAddr));
+  for (const url of urlList(video?.playAddr)) add(url);
 
   if (Array.isArray(video?.bitrateInfo)) {
     const sorted = [...video.bitrateInfo].sort((a, b) => Number(b?.Bitrate ?? 0) - Number(a?.Bitrate ?? 0));
     for (const entry of sorted) {
-      const url = firstUrlList(entry?.PlayAddr);
-      if (url) return url;
+      add(firstString(entry?.PlayAddr));
+      for (const url of urlList(entry?.PlayAddr)) add(url);
     }
   }
 
-  return null;
+  return urls;
+}
+
+function bestVideoUrl(video: AnyRecord): string | null {
+  return videoCandidates(video)[0] ?? null;
 }
 
 function extractImages(item: AnyRecord): string[] {
@@ -224,12 +266,29 @@ function formatItem(item: AnyRecord, sourceUrl: string, expectedId: string | nul
   };
 }
 
-export async function resolveTikTok(inputUrl: URL) {
+async function resolveTikTokItem(inputUrl: URL) {
   const canonical = await resolveCanonicalUrl(inputUrl);
   const directId = extractItemId(canonical.toString());
   const { html, finalUrl } = await fetchPublicPage(canonical);
   const finalId = extractItemId(finalUrl.toString()) || directId;
   const item = extractItemFromHtml(html, finalId);
   if (!item) throw new Error("This public TikTok post could not be parsed.");
+  return { item, finalUrl, finalId };
+}
+
+export async function resolveTikTok(inputUrl: URL) {
+  const { item, finalUrl, finalId } = await resolveTikTokItem(inputUrl);
   return formatItem(item, finalUrl.toString(), finalId);
+}
+
+export async function resolveTikTokVideoCandidates(inputUrl: URL) {
+  const { item, finalUrl, finalId } = await resolveTikTokItem(inputUrl);
+  const candidates = videoCandidates(item?.video ?? {});
+  if (candidates.length === 0) throw new Error("No downloadable public TikTok video was found.");
+  return {
+    candidates,
+    sourceUrl: finalUrl.toString(),
+    id: itemId(item) || finalId || "",
+    title: String(item?.desc ?? item?.title ?? "TikTok video")
+  };
 }

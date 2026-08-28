@@ -22,7 +22,16 @@ if(form){
     return `${base}.${extension}`;
   };
 
-  const downloadDirect=async(url,filename,control)=>{
+  const downloadViaWorker=(sourceUrl)=>{
+    const anchor=document.createElement('a');
+    anchor.href=`/api/download/tiktok?url=${encodeURIComponent(sourceUrl)}`;
+    anchor.style.display='none';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  };
+
+  const downloadDirect=async(url,filename,sourceUrl,control)=>{
     const oldText=control.textContent;
     control.disabled=true;
     control.textContent='Preparing download…';
@@ -42,8 +51,13 @@ if(form){
       setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);
       clearStatus();
     }catch(error){
-      setStatus('Direct download was blocked by the media server. Opening the video instead.','error');
-      window.open(url,'_blank','noopener,noreferrer');
+      if(sourceUrl){
+        setStatus('TikTok blocked the direct CDN request. Retrying through SaveDownloader…','loading');
+        downloadViaWorker(sourceUrl);
+        setTimeout(clearStatus,2500);
+      }else{
+        setStatus('The media server blocked this download. Please resolve the original post again.','error');
+      }
     }finally{
       control.disabled=false;
       control.textContent=oldText;
@@ -68,7 +82,7 @@ if(form){
       downloadButton.textContent='Download video';
       downloadButton.addEventListener('click',()=>{
         if(downloadButton.disabled)return;
-        downloadDirect(data.videoUrl,safeFilename(mediaTitle,'mp4'),downloadButton);
+        downloadDirect(data.videoUrl,safeFilename(mediaTitle,'mp4'),data.sourceUrl,downloadButton);
       });
       actions.append(downloadButton);
     }
