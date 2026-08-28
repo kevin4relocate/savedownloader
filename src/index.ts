@@ -72,6 +72,34 @@ function safeRange(value: string | null): string | null {
   return /^bytes=\d*-\d*$/i.test(value) ? value : null;
 }
 
+function tikTokMediaVariants(mediaUrl: string): string[] {
+  const urls: string[] = [];
+  const add = (url: URL) => {
+    const value = url.toString();
+    if (isTikTokMediaHost(url.hostname) && !urls.includes(value)) urls.push(value);
+  };
+
+  try {
+    const original = new URL(mediaUrl);
+    if (original.protocol === "http:") original.protocol = "https:";
+    if (original.protocol !== "https:" || !isTikTokMediaHost(original.hostname)) return [];
+    add(original);
+
+    // TikTok can return a generic/Asia CDN hostname to Cloudflare while the
+    // same public post resolves to the public .us.tiktok.com CDN from US networks.
+    // The signed path/query are otherwise equivalent, so retry that public host.
+    if (/^v\d+-webapp-prime\.tiktok\.com$/i.test(original.hostname)) {
+      const us = new URL(original.toString());
+      us.hostname = original.hostname.replace(/\.tiktok\.com$/i, ".us.tiktok.com");
+      add(us);
+    }
+  } catch {
+    return [];
+  }
+
+  return urls;
+}
+
 async function fetchTikTokMediaCandidate(mediaUrl: string, sourceUrl: string, range: string | null): Promise<Response | null> {
   let current = new URL(mediaUrl);
 
@@ -133,24 +161,26 @@ async function handleTikTokDownload(request: Request): Promise<Response> {
     const range = safeRange(request.headers.get("range"));
 
     for (const candidate of resolved.candidates) {
-      const media = await fetchTikTokMediaCandidate(candidate, resolved.sourceUrl, range);
-      if (!media) continue;
+      for (const variant of tikTokMediaVariants(candidate)) {
+        const media = await fetchTikTokMediaCandidate(variant, resolved.sourceUrl, range);
+        if (!media) continue;
 
-      const headers = new Headers();
-      for (const name of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
-        const value = media.headers.get(name);
-        if (value) headers.set(name, value);
+        const headers = new Headers();
+        for (const name of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
+          const value = media.headers.get(name);
+          if (value) headers.set(name, value);
+        }
+        headers.set("content-disposition", `attachment; filename="tiktok-${resolved.id || "video"}.mp4"`);
+        headers.set("cache-control", "private, no-store");
+        headers.set("x-content-type-options", "nosniff");
+        headers.set("x-robots-tag", "noindex, nofollow, noarchive");
+        headers.set("referrer-policy", "no-referrer");
+
+        return new Response(media.body, {
+          status: media.status,
+          headers
+        });
       }
-      headers.set("content-disposition", `attachment; filename="tiktok-${resolved.id || "video"}.mp4"`);
-      headers.set("cache-control", "private, no-store");
-      headers.set("x-content-type-options", "nosniff");
-      headers.set("x-robots-tag", "noindex, nofollow, noarchive");
-      headers.set("referrer-policy", "no-referrer");
-
-      return new Response(media.body, {
-        status: media.status,
-        headers
-      });
     }
 
     return json({ ok: false, error: "TikTok's media server refused this public video. Please try resolving the original post again." }, 502);
@@ -167,7 +197,7 @@ export default {
       return json({
         ok: true,
         service: "savedownloader",
-        version: "0.3.1",
+        version: "0.3.2",
         providers: ["douyin", "tiktok"],
         deployment: {
           id: env.CF_VERSION_METADATA?.id ?? null,
