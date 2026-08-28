@@ -1,4 +1,9 @@
 (() => {
+  const shellScript = document.createElement("script");
+  shellScript.src = "/assets/site-shell.js";
+  shellScript.async = false;
+  document.head.appendChild(shellScript);
+
   const MEASUREMENT_ID = "G-07B50P20QM";
   const CONSENT_KEY = "sd_analytics_consent_v1";
   const productionHosts = new Set(["savedownloader.com", "www.savedownloader.com"]);
