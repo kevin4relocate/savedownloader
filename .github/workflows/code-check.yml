@@ -34,10 +34,25 @@ jobs:
         run: |
           node --check public/assets/app.js
           node --check public/assets/analytics.js
-      - name: Check Vercel TikTok functions
+          node --check public/assets/instagram.js
+      - name: Check Vercel functions
         run: |
           node --check vercel-tiktok-api/api/health.js
           node --check vercel-tiktok-api/api/download.js
+          node --check vercel-instagram-api/api/health.js
+          node --check vercel-instagram-api/api/download.js
+      - name: Check Instagram preview shares the provider layout
+        run: |
+          set -euo pipefail
+          test -f public/instagram-downloader/index.html
+          grep -Fq '<section class="hero wrap" id="download">' public/instagram-downloader/index.html
+          grep -Fq 'class="provider-title"' public/instagram-downloader/index.html
+          grep -Fq 'class="hero-copy"' public/instagram-downloader/index.html
+          grep -Fq 'class="tool"' public/instagram-downloader/index.html
+          grep -Fq 'class="formrow"' public/instagram-downloader/index.html
+          ! grep -Fq 'instagram-hero' public/instagram-downloader/index.html
+          ! grep -Fq 'instagram-hero' public/assets/instagram.js
+          ! grep -Fq 'document.createElement('"'"'style'"'"')' public/assets/instagram.js
       - name: Check core SEO and consent structure
         run: |
           set -euo pipefail
@@ -89,6 +104,7 @@ jobs:
             'public/index.html',
             'public/douyin-downloader/index.html',
             'public/tiktok-downloader/index.html',
+            'public/instagram-downloader/index.html',
             'public/guides/index.html',
             'public/how-to-download-douyin-videos/index.html',
             'public/how-to-download-tiktok-videos/index.html'
