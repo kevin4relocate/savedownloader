@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
-      TIKTOK_ID: "7678292608577309972"
-      TIKTOK_URL: "https://www.tiktok.com/@86times/video/7678292608577309972"
+      TIKTOK_ID: "7666414408469466386"
+      TIKTOK_URL: "https://www.tiktok.com/@baotienphong.official/video/7666414408469466386"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
