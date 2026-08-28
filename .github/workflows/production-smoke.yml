@@ -14,6 +14,8 @@ jobs:
       PREVIEW_URL: https://savedownloader.nghiep4tube.workers.dev
       DOUYIN_ID: "7670405978537364745"
       DOUYIN_URL: "https://www.douyin.com/jingxuan?modal_id=7670405978537364745"
+      TIKTOK_ID: "6718335390845095173"
+      TIKTOK_URL: "https://www.tiktok.com/@scout2015/video/6718335390845095173"
     steps:
       - name: Check production health
         shell: bash
@@ -23,7 +25,11 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
-          process.exit(health?.version === '0.2.1' ? 0 : 1);
+          if (health?.version !== '0.3.0') throw new Error(`Unexpected version: ${health?.version}`);
+          if (!Array.isArray(health?.providers) || !health.providers.includes('douyin') || !health.providers.includes('tiktok')) {
+            throw new Error('Expected Douyin and TikTok providers');
+          }
+          console.log(JSON.stringify(health, null, 2));
           NODE
 
       - name: Check indexable release pages
@@ -33,6 +39,7 @@ jobs:
           pages=(
             "/"
             "/douyin-downloader/"
+            "/tiktok-downloader/"
             "/how-to-download-douyin-videos/"
             "/about/"
             "/contact/"
@@ -66,14 +73,15 @@ jobs:
           curl -fsSI --max-time 20 "$BASE_URL/" >/tmp/home.headers
           grep -Eqi '^content-security-policy:.*https://www\.googletagmanager\.com' /tmp/home.headers
 
-      - name: Check Douyin-only public positioning
+      - name: Check supported platform positioning
         shell: bash
         run: |
           set -euo pipefail
           html=$(curl -fsS --max-time 20 "$BASE_URL/")
           grep -qi 'Douyin' <<<"$html"
-          if grep -Eqi 'TikTok|Instagram' <<<"$html"; then
-            echo "Homepage should only advertise Douyin in this release."
+          grep -qi 'TikTok' <<<"$html"
+          if grep -Eqi 'Instagram' <<<"$html"; then
+            echo "Homepage should not advertise untested platforms."
             exit 1
           fi
 
@@ -113,7 +121,7 @@ jobs:
 
           sitemap=$(curl -fsS --max-time 20 "$BASE_URL/sitemap.xml")
           grep -qi '<urlset' <<<"$sitemap"
-          for path in '' 'douyin-downloader/' 'how-to-download-douyin-videos/' 'about/' 'contact/' 'privacy/' 'terms/' 'copyright/'; do
+          for path in '' 'douyin-downloader/' 'tiktok-downloader/' 'how-to-download-douyin-videos/' 'about/' 'contact/' 'privacy/' 'terms/' 'copyright/'; do
             grep -Fq "https://savedownloader.com/$path" <<<"$sitemap"
           done
 
@@ -158,14 +166,23 @@ jobs:
             if (payload.data?.platform !== "douyin") throw new Error("Unexpected platform");
             if (payload.data?.id !== process.env.DOUYIN_ID) throw new Error("Unexpected Douyin post ID");
             if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
-            console.log(JSON.stringify({
-              ok: true,
-              platform: payload.data.platform,
-              id: payload.data.id,
-              type: payload.data.type,
-              title: payload.data.title,
-              author: payload.data.author,
-              hasVideo: Boolean(payload.data.videoUrl),
-              imageCount: payload.data.images?.length || 0
-            }, null, 2));
+          '
+
+      - name: Check live TikTok resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/tiktok.json -w "%{http_code}" --max-time 45 \
+            -H "content-type: application/json" \
+            -d "{\"url\":\"$TIKTOK_URL\"}" \
+            "$BASE_URL/api/resolve")
+          cat /tmp/tiktok.json
+          test "$code" = "200"
+          node -e '
+            const fs = require("fs");
+            const payload = JSON.parse(fs.readFileSync("/tmp/tiktok.json", "utf8"));
+            if (!payload.ok) throw new Error(payload.error || "Resolver returned ok=false");
+            if (payload.data?.platform !== "tiktok") throw new Error("Unexpected platform");
+            if (payload.data?.id && payload.data.id !== process.env.TIKTOK_ID) throw new Error("Unexpected TikTok post ID");
+            if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
           '
