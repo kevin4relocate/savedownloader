@@ -45,14 +45,20 @@ jobs:
         run: |
           set -euo pipefail
           test -f public/instagram-downloader/index.html
+          test -f public/assets/media-gallery.css
           grep -Fq '<section class="hero wrap" id="download">' public/instagram-downloader/index.html
           grep -Fq 'class="provider-title"' public/instagram-downloader/index.html
           grep -Fq 'class="hero-copy"' public/instagram-downloader/index.html
           grep -Fq 'class="tool"' public/instagram-downloader/index.html
           grep -Fq 'class="formrow"' public/instagram-downloader/index.html
+          grep -Fq '/assets/media-gallery.css' public/instagram-downloader/index.html
+          grep -Fq 'class="result media-result"' public/instagram-downloader/index.html
+          grep -Fq 'data-media-gallery' public/instagram-downloader/index.html
+          grep -Fq 'data-download-all' public/instagram-downloader/index.html
           ! grep -Fq 'instagram-hero' public/instagram-downloader/index.html
           ! grep -Fq 'instagram-hero' public/assets/instagram.js
           ! grep -Fq 'document.createElement('"'"'style'"'"')' public/assets/instagram.js
+          ! grep -Eq '\.instagram[-_]' public/assets/media-gallery.css
       - name: Check core SEO and consent structure
         run: |
           set -euo pipefail
