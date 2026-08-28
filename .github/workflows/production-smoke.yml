@@ -12,12 +12,13 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     env:
-      BASE_URL: https://savedownloader.nghiep4tube.workers.dev
+      BASE_URL: https://savedownloader.com
+      PREVIEW_URL: https://savedownloader.nghiep4tube.workers.dev
       COMMIT_TIME: ${{ github.event.head_commit.timestamp }}
       DOUYIN_ID: "7670405978537364745"
       DOUYIN_URL: "https://www.douyin.com/jingxuan?modal_id=7670405978537364745"
     steps:
-      - name: Wait for active Cloudflare deployment
+      - name: Wait for active production deployment
         shell: bash
         run: |
           set -euo pipefail
@@ -33,14 +34,14 @@ jobs:
           process.exit(health?.version === '0.2.1' && currentEnough ? 0 : 1);
           NODE
               then
-                echo "Active Worker version is current enough for this commit."
+                echo "Production custom domain is serving the current Worker version."
                 exit 0
               fi
             fi
-            echo "Cloudflare has not activated this commit yet (attempt $i/30)"
+            echo "Custom domain has not activated this commit yet (attempt $i/30)"
             sleep 10
           done
-          echo "Cloudflare deployment did not become current in time"
+          echo "Production custom domain did not become current in time"
           exit 1
 
       - name: Check indexable release pages
@@ -69,6 +70,8 @@ jobs:
               exit 1
             fi
           done
+          home=$(curl -fsS --max-time 20 "$BASE_URL/")
+          grep -Fqi '<link rel="canonical" href="https://savedownloader.com/">' <<<"$home"
 
       - name: Check Douyin-only public positioning
         shell: bash
@@ -81,7 +84,7 @@ jobs:
             exit 1
           fi
 
-      - name: Check security and preview indexing headers
+      - name: Check security and indexing headers
         shell: bash
         run: |
           set -euo pipefail
@@ -92,7 +95,14 @@ jobs:
           grep -Eqi '^referrer-policy:' /tmp/home.headers
           grep -Eqi '^permissions-policy:' /tmp/home.headers
           grep -Eqi '^content-security-policy:' /tmp/home.headers
-          grep -Eqi '^x-robots-tag:.*noindex' /tmp/home.headers
+          if grep -Eqi '^x-robots-tag:.*noindex' /tmp/home.headers; then
+            echo "Custom production domain must be indexable."
+            exit 1
+          fi
+
+          curl -fsSI --max-time 20 "$PREVIEW_URL/" >/tmp/preview.headers
+          cat /tmp/preview.headers
+          grep -Eqi '^x-robots-tag:.*noindex' /tmp/preview.headers
 
           curl -fsSI --max-time 20 "$BASE_URL/api/health" >/tmp/api.headers
           cat /tmp/api.headers
