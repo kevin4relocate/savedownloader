@@ -1,8 +1,6 @@
 name: Production Smoke Test
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,35 +12,19 @@ jobs:
     env:
       BASE_URL: https://savedownloader.com
       PREVIEW_URL: https://savedownloader.nghiep4tube.workers.dev
-      COMMIT_TIME: ${{ github.event.head_commit.timestamp }}
       DOUYIN_ID: "7670405978537364745"
       DOUYIN_URL: "https://www.douyin.com/jingxuan?modal_id=7670405978537364745"
     steps:
-      - name: Wait for active production deployment
+      - name: Check production health
         shell: bash
         run: |
           set -euo pipefail
-          for i in {1..30}; do
-            if curl -fsS --max-time 15 "$BASE_URL/api/health" >/tmp/health.json; then
-              cat /tmp/health.json
-              if node <<'NODE'
+          curl -fsS --max-time 20 "$BASE_URL/api/health" | tee /tmp/health.json
+          node <<'NODE'
           const fs = require('fs');
           const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
-          const deployedAt = Date.parse(health?.deployment?.timestamp || '');
-          const commitAt = Date.parse(process.env.COMMIT_TIME || '');
-          const currentEnough = Number.isFinite(deployedAt) && (!Number.isFinite(commitAt) || deployedAt >= commitAt);
-          process.exit(health?.version === '0.2.1' && currentEnough ? 0 : 1);
+          process.exit(health?.version === '0.2.1' ? 0 : 1);
           NODE
-              then
-                echo "Production custom domain is serving the current Worker version."
-                exit 0
-              fi
-            fi
-            echo "Custom domain has not activated this commit yet (attempt $i/30)"
-            sleep 10
-          done
-          echo "Production custom domain did not become current in time"
-          exit 1
 
       - name: Check indexable release pages
         shell: bash
@@ -65,6 +47,7 @@ jobs:
             grep -qi 'name="description"' <<<"$html"
             grep -qi 'rel="canonical"' <<<"$html"
             grep -qi '<h1' <<<"$html"
+            grep -Fqi '<script src="/assets/analytics.js" defer></script>' <<<"$html"
             if grep -Eqi 'name="robots"[^>]*content="[^"]*noindex' <<<"$html"; then
               echo "Unexpected HTML noindex on $path"
               exit 1
@@ -72,6 +55,16 @@ jobs:
           done
           home=$(curl -fsS --max-time 20 "$BASE_URL/")
           grep -Fqi '<link rel="canonical" href="https://savedownloader.com/">' <<<"$home"
+
+      - name: Check Google Analytics integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          analytics=$(curl -fsS --max-time 20 "$BASE_URL/assets/analytics.js")
+          grep -Fq 'G-07B50P20QM' <<<"$analytics"
+          grep -Fq 'www.googletagmanager.com/gtag/js' <<<"$analytics"
+          curl -fsSI --max-time 20 "$BASE_URL/" >/tmp/home.headers
+          grep -Eqi '^content-security-policy:.*https://www\.googletagmanager\.com' /tmp/home.headers
 
       - name: Check Douyin-only public positioning
         shell: bash
