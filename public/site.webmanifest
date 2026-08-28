@@ -1,12 +1,12 @@
 {
   "name": "SaveDownloader",
   "short_name": "SaveDownloader",
-  "description": "Browser-based downloader for public Douyin media.",
+  "description": "Browser-based downloader for supported public Douyin and TikTok media.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f6f7fb",
-  "theme_color": "#5856e8",
+  "background_color": "#0b0e14",
+  "theme_color": "#0b0e14",
   "icons": [
     {
       "src": "/favicon.svg",
