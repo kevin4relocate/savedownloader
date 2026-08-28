@@ -1,7 +1,7 @@
 const DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
 
 type AnyRecord = Record<string, any>;
-export type InstagramMediaItem = { type: "image" | "video"; url: string };
+export type InstagramMediaItem = { type: "image" | "video"; url: string; previewUrl?: string | null };
 
 const MEDIA_ROOTS = ["cdninstagram.com", "fbcdn.net"];
 
@@ -165,13 +165,13 @@ function mediaFromNode(node: AnyRecord): InstagramMediaItem[] {
   const source = children.length ? children : [node];
   const media: InstagramMediaItem[] = [];
   for (const child of source.slice(0, 50)) {
+    const previewUrl = largestImage(child);
     const video = bestVideo(child);
     if (video) {
-      media.push({ type: "video", url: video });
+      media.push({ type: "video", url: video, previewUrl });
       continue;
     }
-    const image = largestImage(child);
-    if (image) media.push({ type: "image", url: image });
+    if (previewUrl) media.push({ type: "image", url: previewUrl, previewUrl });
   }
   return media;
 }
@@ -231,8 +231,8 @@ export async function resolveInstagram(inputUrl: URL) {
   if (!media.length) {
     const video = normalizeMediaUrl(metaContent(html, "og:video:secure_url")) || normalizeMediaUrl(metaContent(html, "og:video"));
     const image = normalizeMediaUrl(metaContent(html, "og:image"));
-    if (video) media.push({ type: "video", url: video });
-    else if (image) media.push({ type: "image", url: image });
+    if (video) media.push({ type: "video", url: video, previewUrl: image });
+    else if (image) media.push({ type: "image", url: image, previewUrl: image });
   }
 
   media = dedupeMedia(media);
@@ -242,7 +242,9 @@ export async function resolveInstagram(inputUrl: URL) {
 
   const description = metaContent(html, "og:description") || metaContent(html, "description") || "Instagram post";
   const author = String(postNode?.owner?.username ?? postNode?.user?.username ?? postNode?.username ?? "Instagram creator");
-  const cover = media.find((item) => item.type === "image")?.url || normalizeMediaUrl(metaContent(html, "og:image"));
+  const cover = media.find((item) => item.previewUrl)?.previewUrl || media.find((item) => item.type === "image")?.url || normalizeMediaUrl(metaContent(html, "og:image"));
+  const imageCount = media.filter((item) => item.type === "image").length;
+  const videoCount = media.filter((item) => item.type === "video").length;
 
   return {
     platform: "instagram",
@@ -252,6 +254,9 @@ export async function resolveInstagram(inputUrl: URL) {
     author,
     cover,
     media,
+    mediaCount: media.length,
+    imageCount,
+    videoCount,
     sourceUrl: finalUrl.toString(),
     notice: "Download only public media you own or have permission to save."
   };
