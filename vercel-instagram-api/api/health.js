@@ -4,7 +4,10 @@ export default function handler(req, res) {
   res.status(200).json({
     ok: true,
     service: 'savedownloader-instagram-api',
-    version: '0.1.0',
+    version: '0.2.0',
+    provider: 'instagram',
+    publicOnly: true,
+    supportedMedia: ['reel', 'video', 'photo', 'carousel'],
     region: process.env.VERCEL_REGION || null
   });
 }
