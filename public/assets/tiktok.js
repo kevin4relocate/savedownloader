@@ -7,28 +7,10 @@ if(form){
   const TIKTOK_DOWNLOAD_API='https://savedownloader-tiktok-api.vercel.app/api/download';
 
   const hero=form.closest('.hero');
-  if(hero){
-    hero.classList.add('tiktok-hero-compact');
-    const style=document.createElement('style');
-    style.textContent=`
-      .tiktok-hero-compact{padding:38px 0 32px}
-      .tiktok-hero-compact h1{font-size:clamp(38px,5.2vw,56px);line-height:1.03;letter-spacing:-2.1px;max-width:850px;margin:14px auto 10px}
-      .tiktok-hero-compact>p,.tiktok-hero-compact .hero-copy{font-size:16.5px;max-width:760px;margin:0 auto 18px}
-      .tiktok-hero-compact .tool{max-width:900px;padding:16px}
-      @media(max-width:820px){
-        .tiktok-hero-compact{padding:30px 0 28px}
-        .tiktok-hero-compact h1{font-size:clamp(36px,7vw,50px);letter-spacing:-1.6px;margin-top:12px}
-        .tiktok-hero-compact>p,.tiktok-hero-compact .hero-copy{margin-bottom:16px}
-      }
-      @media(max-width:620px){
-        .tiktok-hero-compact{padding:24px 0 24px}
-        .tiktok-hero-compact h1{font-size:38px;line-height:1.05;margin:10px auto 9px}
-        .tiktok-hero-compact>p,.tiktok-hero-compact .hero-copy{font-size:15.5px;margin-bottom:14px}
-        .tiktok-hero-compact .tool{padding:14px}
-      }
-    `;
-    document.head.appendChild(style);
-  }
+  if(hero)hero.classList.remove('tiktok-hero-compact');
+  document.querySelectorAll('style').forEach((style)=>{
+    if(style.textContent?.includes('.tiktok-hero-compact'))style.remove();
+  });
 
   const setStatus=(message,type)=>{
     status.textContent=message;
