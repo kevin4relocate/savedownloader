@@ -3,22 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SaveDownloader - Douyin & TikTok Video Downloader</title>
-  <meta name="description" content="Download public Douyin and TikTok videos online with SaveDownloader. Paste a public link, resolve the available media, and save it directly in your browser.">
+  <title>SaveDownloader - Free Douyin & TikTok Video Downloader</title>
+  <meta name="description" content="Download supported public Douyin and TikTok videos online with SaveDownloader. Paste a public post link, resolve the media, and save it in your browser.">
   <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
   <link rel="canonical" href="https://savedownloader.com/">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <meta name="theme-color" content="#5856e8">
+  <meta name="theme-color" content="#0b0e14">
+  <meta name="application-name" content="SaveDownloader">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="SaveDownloader">
   <meta property="og:title" content="SaveDownloader - Douyin & TikTok Video Downloader">
-  <meta property="og:description" content="Paste a public Douyin or TikTok link and save the available media directly to your device.">
+  <meta property="og:description" content="Paste a supported public Douyin or TikTok link and save the available media to your device.">
   <meta property="og:url" content="https://savedownloader.com/">
   <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="SaveDownloader - Douyin & TikTok Downloader">
-  <meta name="twitter:description" content="A browser-based downloader for public Douyin and TikTok media.">
+  <meta name="twitter:description" content="A browser-based downloader for supported public Douyin and TikTok media.">
   <link rel="stylesheet" href="/assets/styles.css">
   <script src="/assets/analytics.js" defer></script>
   <script type="application/ld+json">
@@ -26,11 +27,18 @@
     "@context":"https://schema.org",
     "@graph":[
       {
+        "@type":"Organization",
+        "@id":"https://savedownloader.com/#organization",
+        "name":"SaveDownloader",
+        "url":"https://savedownloader.com/"
+      },
+      {
         "@type":"WebSite",
         "@id":"https://savedownloader.com/#website",
         "url":"https://savedownloader.com/",
         "name":"SaveDownloader",
-        "description":"A browser-based utility for resolving public Douyin and TikTok media that users own or have permission to save.",
+        "description":"A browser-based utility for resolving supported public Douyin and TikTok media that users own or have permission to save.",
+        "publisher":{"@id":"https://savedownloader.com/#organization"},
         "inLanguage":"en"
       },
       {
@@ -42,7 +50,8 @@
         "operatingSystem":"Any",
         "browserRequirements":"Requires a modern web browser with JavaScript enabled.",
         "isAccessibleForFree":true,
-        "description":"Paste a public Douyin or TikTok link to resolve and download available media in your browser."
+        "publisher":{"@id":"https://savedownloader.com/#organization"},
+        "description":"Paste a supported public Douyin or TikTok link to resolve and download available media in your browser."
       }
     ]
   }
@@ -56,7 +65,7 @@
     <nav class="navlinks" aria-label="Main navigation">
       <a href="/douyin-downloader/">Douyin Downloader</a>
       <a href="/tiktok-downloader/">TikTok Downloader</a>
-      <a href="/how-to-download-douyin-videos/">Guides</a>
+      <a href="/guides/">Guides</a>
       <a href="/about/">About</a>
       <a href="/contact/">Contact</a>
       <a class="nav-cta" href="#download">Download</a>
@@ -88,7 +97,7 @@
     </div>
     <div class="trustbar" aria-label="SaveDownloader benefits">
       <div class="trustitem"><strong>No sign-up</strong><span>No Douyin or TikTok account credentials required.</span></div>
-      <div class="trustitem"><strong>Direct to your device</strong><span>Your browser downloads from the media host.</span></div>
+      <div class="trustitem"><strong>Direct to your device</strong><span>Your browser downloads the available media file.</span></div>
       <div class="trustitem"><strong>Works in a browser</strong><span>Use it on mobile or desktop without installing an app.</span></div>
     </div>
   </section>
@@ -111,7 +120,7 @@
     <div class="grid">
       <article class="card"><span class="pill">Available</span><h3>Douyin Downloader</h3><p>Resolve common public Douyin video, share-link, and Jingxuan URL formats.</p><p><a href="/douyin-downloader/">Open Douyin Downloader →</a></p></article>
       <article class="card"><span class="pill">Available</span><h3>TikTok Downloader</h3><p>Resolve public TikTok video pages, compatible photo posts, and TikTok-owned short links.</p><p><a href="/tiktok-downloader/">Open TikTok Downloader →</a></p></article>
-      <article class="card"><div class="icon">✓</div><h3>Public content only</h3><p>SaveDownloader does not provide login flows or support private, paywalled, DRM-protected, or access-controlled media.</p></article>
+      <article class="card"><div class="icon">?</div><h3>Need help?</h3><p>Read device-specific instructions, supported link formats, and troubleshooting tips.</p><p><a href="/guides/">Open download guides →</a></p></article>
     </div>
   </section>
 
@@ -120,7 +129,7 @@
       <h2>Why use SaveDownloader?</h2>
       <p>SaveDownloader is designed as a lightweight media resolver rather than a permanent video-hosting library. You provide the original public post URL, the service locates available public media information, and your browser initiates the final download.</p>
       <p>Public platform interfaces can change without notice, so keep the original post URL. If a temporary media URL expires, resolve the original public link again.</p>
-      <div class="callout"><strong>Supported now:</strong> public Douyin and TikTok media. Other platforms are not advertised until their download flow has been tested.</div>
+      <div class="callout"><strong>Guides:</strong> see the <a href="/how-to-download-douyin-videos/">Douyin download guide</a> or <a href="/how-to-download-tiktok-videos/">TikTok download guide</a> for mobile, desktop, and troubleshooting instructions.</div>
     </div>
   </section>
 
@@ -130,7 +139,7 @@
       <details><summary>Is SaveDownloader free?</summary><p>Yes. The current public Douyin and TikTok downloaders can be used without creating a SaveDownloader account.</p></details>
       <details><summary>Do I need to log in to Douyin or TikTok?</summary><p>No. SaveDownloader is designed for public links and does not ask for platform passwords or private account cookies.</p></details>
       <details><summary>Where is the downloaded video saved?</summary><p>Your browser controls the download location. Depending on your device and browser, the file may be saved automatically to Downloads or you may be asked where to save it.</p></details>
-      <details><summary>Why can a resolved link expire?</summary><p>Media delivery networks can issue temporary or signed URLs. Submit the original public post again to resolve a fresh media URL.</p></details>
+      <details><summary>Why can a resolved link expire?</summary><p>Media delivery networks can issue temporary or signed URLs. Submit the original public post again to resolve fresh media information.</p></details>
       <details><summary>Can SaveDownloader download private videos?</summary><p>No. Private, login-only, paywalled, DRM-protected, and other access-controlled content is outside the scope of the service.</p></details>
       <div class="cta">
         <h2>Ready to save public media?</h2>
@@ -143,8 +152,8 @@
 <footer class="site-footer">
   <div class="wrap footer-grid">
     <div class="footer-brand"><a class="brand" href="/">Save<span>Downloader</span></a><p>A browser-based utility for downloading public Douyin and TikTok media you own or have permission to save.</p></div>
-    <div class="footer-col"><strong>Downloaders</strong><a href="/douyin-downloader/">Douyin Downloader</a><a href="/tiktok-downloader/">TikTok Downloader</a><a href="/how-to-download-douyin-videos/">Douyin Guide</a></div>
-    <div class="footer-col"><strong>Company</strong><a href="/about/">About</a><a href="/contact/">Contact</a></div>
+    <div class="footer-col"><strong>Downloaders</strong><a href="/douyin-downloader/">Douyin Downloader</a><a href="/tiktok-downloader/">TikTok Downloader</a></div>
+    <div class="footer-col"><strong>Guides</strong><a href="/guides/">All Guides</a><a href="/how-to-download-douyin-videos/">Douyin Guide</a><a href="/how-to-download-tiktok-videos/">TikTok Guide</a></div>
     <div class="footer-col"><strong>Legal</strong><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/copyright/">Copyright</a></div>
   </div>
   <div class="wrap footer-bottom"><p>© 2026 SaveDownloader. All rights reserved.</p><p>Independent service. Not affiliated with TikTok, Douyin, or ByteDance.</p></div>

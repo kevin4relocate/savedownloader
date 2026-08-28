@@ -38,3 +38,49 @@ jobs:
         run: |
           node --check vercel-tiktok-api/api/health.js
           node --check vercel-tiktok-api/api/download.js
+      - name: Check core SEO structure
+        run: |
+          set -euo pipefail
+          pages=(
+            public/index.html
+            public/douyin-downloader/index.html
+            public/tiktok-downloader/index.html
+            public/guides/index.html
+            public/how-to-download-douyin-videos/index.html
+            public/how-to-download-tiktok-videos/index.html
+          )
+          for page in "${pages[@]}"; do
+            test -f "$page"
+            grep -Fq 'rel="canonical"' "$page"
+            grep -Fq '<meta name="description"' "$page"
+            grep -Fq '<meta name="robots" content="index,follow' "$page"
+          done
+          urls=(
+            'https://savedownloader.com/'
+            'https://savedownloader.com/douyin-downloader/'
+            'https://savedownloader.com/tiktok-downloader/'
+            'https://savedownloader.com/guides/'
+            'https://savedownloader.com/how-to-download-douyin-videos/'
+            'https://savedownloader.com/how-to-download-tiktok-videos/'
+          )
+          for url in "${urls[@]}"; do
+            grep -Fq "<loc>${url}</loc>" public/sitemap.xml
+          done
+          grep -Fq 'Sitemap: https://savedownloader.com/sitemap.xml' public/robots.txt
+          node <<'NODE'
+          const fs = require('node:fs');
+          const files = [
+            'public/index.html',
+            'public/douyin-downloader/index.html',
+            'public/tiktok-downloader/index.html',
+            'public/guides/index.html',
+            'public/how-to-download-douyin-videos/index.html',
+            'public/how-to-download-tiktok-videos/index.html'
+          ];
+          for (const file of files) {
+            const html = fs.readFileSync(file, 'utf8');
+            const blocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+            if (!blocks.length) throw new Error(`${file}: missing JSON-LD`);
+            for (const block of blocks) JSON.parse(block[1]);
+          }
+          NODE
