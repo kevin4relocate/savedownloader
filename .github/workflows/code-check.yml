@@ -35,12 +35,20 @@ jobs:
           node --check public/assets/app.js
           node --check public/assets/analytics.js
           node --check public/assets/instagram.js
-      - name: Check Vercel functions
+      - name: Check TikTok Vercel functions
         run: |
           node --check vercel-tiktok-api/api/health.js
           node --check vercel-tiktok-api/api/download.js
-          node --check vercel-instagram-api/api/health.js
-          node --check vercel-instagram-api/api/download.js
+      - name: Check Instagram Cloudflare-only delivery
+        run: |
+          set -euo pipefail
+          test ! -e vercel-instagram-api
+          grep -Fq "'/api/download/instagram'" public/assets/instagram.js
+          ! grep -Fq 'vercel.app' public/assets/instagram.js
+          grep -Fq 'handleInstagramDownload' src/index.ts
+          grep -Fq 'url.pathname === "/api/download/instagram"' src/index.ts
+          grep -Fq 'instagramDelivery: "cloudflare"' src/index.ts
+          grep -Fq 'x-savedownloader-delivery' src/index.ts
       - name: Check Instagram preview shares the provider layout
         run: |
           set -euo pipefail
