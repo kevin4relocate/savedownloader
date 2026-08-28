@@ -4,6 +4,7 @@ if(form){
   const button=form.querySelector('button[type="submit"]');
   const status=document.querySelector('[data-status]');
   const result=document.querySelector('[data-result]');
+  const TIKTOK_DOWNLOAD_API='https://savedownloader-tiktok-api.vercel.app/api/download';
 
   const setStatus=(message,type)=>{
     status.textContent=message;
@@ -53,6 +54,25 @@ if(form){
     }
   };
 
+  const downloadTikTokViaBackend=(sourceUrl,control)=>{
+    if(!sourceUrl){setStatus('The original TikTok post URL is missing. Resolve the post again.','error');return;}
+    const oldText=control.textContent;
+    control.disabled=true;
+    control.textContent='Starting download…';
+    setStatus('Preparing the TikTok video for download…','loading');
+    const anchor=document.createElement('a');
+    anchor.href=`${TIKTOK_DOWNLOAD_API}?url=${encodeURIComponent(sourceUrl)}`;
+    anchor.style.display='none';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(()=>{
+      clearStatus();
+      control.disabled=false;
+      control.textContent=oldText;
+    },1500);
+  };
+
   const render=(data)=>{
     const cover=result.querySelector('[data-cover]');
     const title=result.querySelector('[data-title]');
@@ -72,6 +92,10 @@ if(form){
       downloadButton.textContent='Download video';
       downloadButton.addEventListener('click',()=>{
         if(downloadButton.disabled)return;
+        if(data.platform==='tiktok'){
+          downloadTikTokViaBackend(data.sourceUrl,downloadButton);
+          return;
+        }
         downloadDirect(data.videoUrl,safeFilename(mediaTitle,'mp4'),downloadButton);
       });
       actions.append(downloadButton);
