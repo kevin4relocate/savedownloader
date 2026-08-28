@@ -13,7 +13,7 @@ if(form){
   const downloadAllButton=result.querySelector('[data-download-all]');
   const openOriginal=result.querySelector('[data-open-original]');
   const progress=result.querySelector('[data-download-progress]');
-  const INSTAGRAM_DOWNLOAD_API='https://savedownloader-instagram-api.vercel.app/api/download';
+  const INSTAGRAM_DOWNLOAD_API='/api/download/instagram';
   let currentData=null;
 
   const setStatus=(message,type)=>{
@@ -45,7 +45,7 @@ if(form){
 
   const startDownload=(sourceUrl,index,mediaType,control)=>{
     if(!sourceUrl){setStatus('The original Instagram post URL is missing. Resolve the post again.','error');return;}
-    trackEvent('download_instagram',{media_type:mediaType,item_index:index});
+    trackEvent('download_instagram',{media_type:mediaType,item_index:index,delivery:'cloudflare'});
     const oldText=control.textContent;
     control.disabled=true;
     control.textContent='Starting…';
@@ -204,7 +204,8 @@ if(form){
     trackEvent('download_instagram_all',{
       media_count:media.length,
       image_count:media.filter((item)=>item.type==='image').length,
-      video_count:media.filter((item)=>item.type==='video').length
+      video_count:media.filter((item)=>item.type==='video').length,
+      delivery:'cloudflare'
     });
 
     for(let index=0;index<media.length;index+=1){
