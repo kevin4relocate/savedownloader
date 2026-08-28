@@ -1,5 +1,6 @@
 import { assertPublicDouyinUrl, resolveDouyin } from "./providers/douyin";
 import { assertPublicTikTokUrl, isTikTokHost, resolveTikTok } from "./providers/tiktok";
+import { assertPublicInstagramUrl, isInstagramHost, resolveInstagram } from "./providers/instagram";
 
 type AnyRecord = Record<string, any>;
 type Env = {
@@ -121,6 +122,9 @@ async function handleResolve(request: Request): Promise<Response> {
     if (isTikTokHost(url.hostname)) {
       return json({ ok: true, data: await resolveTikTok(assertPublicTikTokUrl(extracted)) });
     }
+    if (isInstagramHost(url.hostname)) {
+      return json({ ok: true, data: await resolveInstagram(assertPublicInstagramUrl(extracted)) });
+    }
     return json({ ok: false, error: "This platform is not supported yet." }, 422);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to resolve this link.";
@@ -174,8 +178,8 @@ export default {
       return json({
         ok: true,
         service: "savedownloader",
-        version: "0.4.0",
-        providers: ["douyin", "tiktok"],
+        version: "0.5.0-instagram-preview",
+        providers: ["douyin", "tiktok", "instagram"],
         deployment: {
           id: env.CF_VERSION_METADATA?.id ?? null,
           tag: env.CF_VERSION_METADATA?.tag ?? null,
