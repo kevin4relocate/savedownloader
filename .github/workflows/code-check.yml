@@ -111,6 +111,11 @@ jobs:
             grep -Fq "<loc>${url}</loc>" public/sitemap.xml
           done
           grep -Fq 'Sitemap: https://savedownloader.com/sitemap.xml' public/robots.txt
+          grep -Fq '<meta name="application-name" content="SaveDownloader">' public/index.html
+          grep -Fq '<meta property="og:site_name" content="SaveDownloader">' public/index.html
+          grep -Fq '"@type":"WebSite"' public/index.html
+          grep -Fq '"name":"SaveDownloader"' public/index.html
+          grep -Fq '"alternateName":["Save Downloader","savedownloader.com"]' public/index.html
           grep -Fq '/instagram-downloader/' public/index.html
           grep -Fq '/how-to-download-instagram-videos-and-photos/' public/index.html
           grep -Fq '/instagram-downloader/' public/guides/index.html
