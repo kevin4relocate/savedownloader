@@ -38,7 +38,7 @@ jobs:
         run: |
           node --check vercel-tiktok-api/api/health.js
           node --check vercel-tiktok-api/api/download.js
-      - name: Check core SEO structure
+      - name: Check core SEO and consent structure
         run: |
           set -euo pipefail
           pages=(
@@ -48,6 +48,11 @@ jobs:
             public/guides/index.html
             public/how-to-download-douyin-videos/index.html
             public/how-to-download-tiktok-videos/index.html
+            public/contact/index.html
+            public/privacy/index.html
+            public/cookies/index.html
+            public/terms/index.html
+            public/copyright/index.html
           )
           for page in "${pages[@]}"; do
             test -f "$page"
@@ -62,11 +67,22 @@ jobs:
             'https://savedownloader.com/guides/'
             'https://savedownloader.com/how-to-download-douyin-videos/'
             'https://savedownloader.com/how-to-download-tiktok-videos/'
+            'https://savedownloader.com/contact/'
+            'https://savedownloader.com/privacy/'
+            'https://savedownloader.com/cookies/'
+            'https://savedownloader.com/terms/'
+            'https://savedownloader.com/copyright/'
           )
           for url in "${urls[@]}"; do
             grep -Fq "<loc>${url}</loc>" public/sitemap.xml
           done
           grep -Fq 'Sitemap: https://savedownloader.com/sitemap.xml' public/robots.txt
+          grep -Fq 'contact@savedownloader.com' public/contact/index.html
+          ! grep -Fq 'github.com/kevin4relocate/savedownloader/issues/new' public/contact/index.html
+          grep -Fq 'sd_analytics_consent_v1' public/assets/analytics.js
+          grep -Fq '/assets/consent.css' public/assets/analytics.js
+          grep -Fq 'data-consent-settings' public/cookies/index.html
+          test -f public/assets/consent.css
           node <<'NODE'
           const fs = require('node:fs');
           const files = [
