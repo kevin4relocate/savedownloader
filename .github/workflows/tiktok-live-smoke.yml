@@ -2,7 +2,9 @@ name: TikTok Live Smoke
 
 on:
   push:
-    branches: [test/tiktok-live-smoke]
+    branches:
+      - test/tiktok-live-smoke
+      - fix/tiktok-download-cdn
   workflow_dispatch:
 
 permissions:
@@ -96,6 +98,23 @@ jobs:
             imageCount: payload.data.images?.length || 0
           }, null, 2));
           NODE
+
+      - name: Download TikTok media through Worker fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          encoded=$(node -p 'encodeURIComponent(process.env.TIKTOK_URL)')
+          code=$(curl -sS -D /tmp/tiktok-download.headers -o /tmp/tiktok-download.bin -w "%{http_code}" \
+            --range 0-1023 --max-time 60 \
+            "http://127.0.0.1:8787/api/download/tiktok?url=$encoded")
+          cat /tmp/tiktok-download.headers
+          test "$code" = "206" || test "$code" = "200"
+          grep -Eqi '^content-disposition:[[:space:]]*attachment;' /tmp/tiktok-download.headers
+          grep -Eqi '^content-type:[[:space:]]*(video/|application/octet-stream)' /tmp/tiktok-download.headers
+          test -s /tmp/tiktok-download.bin
+          bytes=$(wc -c </tmp/tiktok-download.bin)
+          echo "Downloaded test bytes: $bytes"
+          test "$bytes" -gt 0
 
       - name: Show Worker log on failure
         if: failure()
