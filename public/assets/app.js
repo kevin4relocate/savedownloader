@@ -17,6 +17,20 @@ if(form){
 
   const platformName=(platform)=>platform==='tiktok'?'TikTok':platform==='douyin'?'Douyin':'Public';
 
+  const trackEvent=(name,params={})=>{
+    if(typeof window.gtag!=='function')return;
+    window.gtag('event',name,params);
+  };
+
+  const guessPlatform=(value)=>{
+    try{
+      const host=new URL(value).hostname.toLowerCase();
+      if(host==='tiktok.com'||host.endsWith('.tiktok.com'))return 'tiktok';
+      if(host==='douyin.com'||host.endsWith('.douyin.com')||host==='iesdouyin.com'||host.endsWith('.iesdouyin.com'))return 'douyin';
+    }catch{}
+    return 'unknown';
+  };
+
   const safeFilename=(value,extension)=>{
     const base=safeText(value,'savedownloader-media')
       .replace(/[\\/:*?"<>|\u0000-\u001F]/g,' ')
@@ -118,10 +132,12 @@ if(form){
       downloadButton.addEventListener('click',()=>{
         if(downloadButton.disabled)return;
         if(data.platform==='tiktok'){
+          trackEvent('download_tiktok',{media_type:'video',delivery:'vercel'});
           downloadTikTokViaBackend(data.sourceUrl,downloadButton);
           return;
         }
         if(data.platform==='douyin'){
+          trackEvent('download_douyin',{media_type:'video',delivery:'direct_with_cloudflare_fallback'});
           downloadDirect(
             data.videoUrl,
             safeFilename(mediaTitle,'mp4'),
@@ -152,6 +168,7 @@ if(form){
     event.preventDefault();
     const url=input.value.trim();
     if(!url){setStatus('Paste a public Douyin or TikTok link first.','error');return;}
+    const requestedPlatform=guessPlatform(url);
     button.disabled=true;
     result.classList.remove('show');
     setStatus('Checking the public media link…','loading');
@@ -159,9 +176,15 @@ if(form){
       const response=await fetch('/api/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url})});
       const payload=await response.json();
       if(!response.ok||!payload.ok)throw new Error(payload.error||'Unable to resolve this link.');
+      trackEvent('resolve_success',{
+        platform:payload.data?.platform||requestedPlatform,
+        media_type:payload.data?.type||'unknown'
+      });
       clearStatus();
       render(payload.data);
-    }catch(error){setStatus(error instanceof Error?error.message:'Something went wrong. Please try again.','error');}
-    finally{button.disabled=false;}
+    }catch(error){
+      trackEvent('resolve_failed',{platform:requestedPlatform});
+      setStatus(error instanceof Error?error.message:'Something went wrong. Please try again.','error');
+    }finally{button.disabled=false;}
   });
 }
