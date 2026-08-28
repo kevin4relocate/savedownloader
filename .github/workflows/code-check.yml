@@ -34,7 +34,16 @@ jobs:
         run: |
           node --check public/assets/app.js
           node --check public/assets/analytics.js
+          node --check public/assets/site-shell.js
           node --check public/assets/instagram.js
+      - name: Check shared navigation shell
+        run: |
+          set -euo pipefail
+          test -f public/assets/site-shell.js
+          grep -Fq '/assets/site-shell.js' public/assets/analytics.js
+          grep -Fq "'/instagram-downloader/'" public/assets/site-shell.js
+          grep -Fq "'Instagram Downloader'" public/assets/site-shell.js
+          grep -Fq "a[href=\"/guides/\"]" public/assets/site-shell.js
       - name: Check TikTok Vercel functions
         run: |
           node --check vercel-tiktok-api/api/health.js
