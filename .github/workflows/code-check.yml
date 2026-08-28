@@ -36,14 +36,85 @@ jobs:
           node --check public/assets/analytics.js
           node --check public/assets/site-shell.js
           node --check public/assets/instagram.js
-      - name: Check shared navigation shell
+      - name: Check unified navigation shell
         run: |
           set -euo pipefail
           test -f public/assets/site-shell.js
+          test -f public/assets/nav.css
           grep -Fq '/assets/site-shell.js' public/assets/analytics.js
-          grep -Fq "'/instagram-downloader/'" public/assets/site-shell.js
-          grep -Fq "'Instagram Downloader'" public/assets/site-shell.js
-          grep -Fq "a[href=\"/guides/\"]" public/assets/site-shell.js
+          grep -Fq 'nav-toggle' public/assets/site-shell.js
+          grep -Fq "nav.classList.toggle('is-open'" public/assets/site-shell.js
+          grep -Fq '.nav-toggle' public/assets/nav.css
+          grep -Fq '.navlinks.is-open' public/assets/nav.css
+          ! grep -Fq 'instagramLink' public/assets/site-shell.js
+          nav_pages=(
+            public/index.html
+            public/douyin-downloader/index.html
+            public/tiktok-downloader/index.html
+            public/instagram-downloader/index.html
+            public/guides/index.html
+            public/how-to-download-douyin-videos/index.html
+            public/how-to-download-tiktok-videos/index.html
+            public/how-to-download-instagram-videos-and-photos/index.html
+            public/about/index.html
+            public/contact/index.html
+            public/privacy/index.html
+            public/cookies/index.html
+            public/terms/index.html
+            public/copyright/index.html
+          )
+          for page in "${nav_pages[@]}"; do
+            grep -Fq '/assets/nav.css' "$page"
+            grep -Fq 'href="/douyin-downloader/"' "$page"
+            grep -Fq 'href="/tiktok-downloader/"' "$page"
+            grep -Fq 'href="/instagram-downloader/"' "$page"
+            grep -Fq 'href="/guides/"' "$page"
+            grep -Fq 'href="/about/"' "$page"
+            grep -Fq 'href="/contact/"' "$page"
+            grep -Fq 'class="nav-cta"' "$page"
+          done
+          node <<'NODE'
+          const fs = require('node:fs');
+          const pages = [
+            'public/index.html',
+            'public/douyin-downloader/index.html',
+            'public/tiktok-downloader/index.html',
+            'public/instagram-downloader/index.html',
+            'public/guides/index.html',
+            'public/how-to-download-douyin-videos/index.html',
+            'public/how-to-download-tiktok-videos/index.html',
+            'public/how-to-download-instagram-videos-and-photos/index.html',
+            'public/about/index.html',
+            'public/contact/index.html',
+            'public/privacy/index.html',
+            'public/cookies/index.html',
+            'public/terms/index.html',
+            'public/copyright/index.html'
+          ];
+          const order = [
+            '/douyin-downloader/',
+            '/tiktok-downloader/',
+            '/instagram-downloader/',
+            '/guides/',
+            '/about/',
+            '/contact/'
+          ];
+          for (const file of pages) {
+            const html = fs.readFileSync(file, 'utf8');
+            const header = html.match(/<header class="site-header">([\s\S]*?)<\/header>/)?.[1];
+            if (!header) throw new Error(`${file}: missing site header`);
+            let last = -1;
+            for (const href of order) {
+              const index = header.indexOf(`href="${href}"`);
+              if (index < 0 || index <= last) throw new Error(`${file}: navigation order mismatch at ${href}`);
+              last = index;
+            }
+            if (!header.includes('class="nav-cta"')) throw new Error(`${file}: missing Download CTA`);
+          }
+          const tiktok = fs.readFileSync('public/tiktok-downloader/index.html', 'utf8');
+          const analyticsLoads = (tiktok.match(/src="\/assets\/analytics\.js"/g) || []).length;
+          if (analyticsLoads !== 1) throw new Error(`TikTok page must load analytics.js once, found ${analyticsLoads}`);
+          NODE
       - name: Check TikTok Vercel functions
         run: |
           node --check vercel-tiktok-api/api/health.js
