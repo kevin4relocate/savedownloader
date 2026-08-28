@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
-      TIKTOK_ID: "6718335390845095173"
-      TIKTOK_URL: "https://www.tiktok.com/@scout2015/video/6718335390845095173"
+      TIKTOK_ID: "7678292608577309972"
+      TIKTOK_URL: "https://www.tiktok.com/@86times/video/7678292608577309972"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,7 +70,7 @@ jobs:
           grep -qi '<h1>Download public TikTok videos online.</h1>' <<<"$html"
           grep -qi 'data-tiktok-downloader-form' <<<"$html"
 
-      - name: Resolve official public TikTok example
+      - name: Resolve reported public TikTok video
         shell: bash
         run: |
           set -euo pipefail
@@ -95,11 +95,12 @@ jobs:
             title: payload.data.title,
             author: payload.data.author,
             hasVideo: Boolean(payload.data.videoUrl),
-            imageCount: payload.data.images?.length || 0
+            imageCount: payload.data.images?.length || 0,
+            videoHost: payload.data.videoUrl ? new URL(payload.data.videoUrl).hostname : null
           }, null, 2));
           NODE
 
-      - name: Download TikTok media through Worker fallback
+      - name: Download reported TikTok media through Worker fallback
         shell: bash
         run: |
           set -euo pipefail
@@ -108,7 +109,10 @@ jobs:
             --range 0-1023 --max-time 60 \
             "http://127.0.0.1:8787/api/download/tiktok?url=$encoded")
           cat /tmp/tiktok-download.headers
-          test "$code" = "206" || test "$code" = "200"
+          if [ "$code" != "206" ] && [ "$code" != "200" ]; then
+            cat /tmp/tiktok-download.bin || true
+            exit 1
+          fi
           grep -Eqi '^content-disposition:[[:space:]]*attachment;' /tmp/tiktok-download.headers
           grep -Eqi '^content-type:[[:space:]]*(video/|application/octet-stream)' /tmp/tiktok-download.headers
           test -s /tmp/tiktok-download.bin
