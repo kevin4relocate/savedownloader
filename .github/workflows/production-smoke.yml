@@ -11,11 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BASE_URL: https://savedownloader.com
-      PREVIEW_URL: https://savedownloader.nghiep4tube.workers.dev
+      PREVIEW_URL: https://savedownloader.kevin4relocate.workers.dev
+      TIKTOK_DOWNLOAD_API: https://savedownloader-tiktok-api.vercel.app/api/download
+      TIKTOK_HEALTH_API: https://savedownloader-tiktok-api.vercel.app/api/health
       DOUYIN_ID: "7670405978537364745"
       DOUYIN_URL: "https://www.douyin.com/jingxuan?modal_id=7670405978537364745"
-      TIKTOK_ID: "6718335390845095173"
-      TIKTOK_URL: "https://www.tiktok.com/@scout2015/video/6718335390845095173"
+      TIKTOK_ID: "7678292608577309972"
+      TIKTOK_URL: "https://www.tiktok.com/@86times/video/7678292608577309972"
     steps:
       - name: Check production health
         shell: bash
@@ -25,9 +27,23 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
-          if (health?.version !== '0.3.0') throw new Error(`Unexpected version: ${health?.version}`);
+          if (health?.version !== '0.4.0') throw new Error(`Unexpected version: ${health?.version}`);
           if (!Array.isArray(health?.providers) || !health.providers.includes('douyin') || !health.providers.includes('tiktok')) {
             throw new Error('Expected Douyin and TikTok providers');
+          }
+          console.log(JSON.stringify(health, null, 2));
+          NODE
+
+      - name: Check TikTok delivery backend health
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 20 "$TIKTOK_HEALTH_API" | tee /tmp/tiktok-health.json
+          node <<'NODE'
+          const fs = require('fs');
+          const health = JSON.parse(fs.readFileSync('/tmp/tiktok-health.json', 'utf8'));
+          if (!health?.ok || health?.service !== 'savedownloader-tiktok-api') {
+            throw new Error('TikTok delivery backend health check failed');
           }
           console.log(JSON.stringify(health, null, 2));
           NODE
@@ -63,13 +79,21 @@ jobs:
           home=$(curl -fsS --max-time 20 "$BASE_URL/")
           grep -Fqi '<link rel="canonical" href="https://savedownloader.com/">' <<<"$home"
 
-      - name: Check Google Analytics integration
+      - name: Check Google Analytics integration and events
         shell: bash
         run: |
           set -euo pipefail
           analytics=$(curl -fsS --max-time 20 "$BASE_URL/assets/analytics.js")
           grep -Fq 'G-07B50P20QM' <<<"$analytics"
           grep -Fq 'www.googletagmanager.com/gtag/js' <<<"$analytics"
+
+          app=$(curl -fsS --max-time 20 "$BASE_URL/assets/app.js")
+          for event in resolve_success resolve_failed download_douyin download_tiktok; do
+            grep -Fq "$event" <<<"$app"
+          done
+          grep -Fq 'savedownloader-tiktok-api.vercel.app/api/download' <<<"$app"
+          grep -Fq '/api/download/douyin' <<<"$app"
+
           curl -fsSI --max-time 20 "$BASE_URL/" >/tmp/home.headers
           grep -Eqi '^content-security-policy:.*https://www\.googletagmanager\.com' /tmp/home.headers
 
@@ -168,6 +192,24 @@ jobs:
             if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
           '
 
+      - name: Check live Douyin download fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --max-time 60 \
+            -H 'Range: bytes=0-1023' \
+            -D /tmp/douyin-download.headers \
+            -o /tmp/douyin-download.bin \
+            -w "%{http_code}" \
+            -G --data-urlencode "url=$DOUYIN_URL" \
+            "$BASE_URL/api/download/douyin")
+          cat /tmp/douyin-download.headers
+          test "$code" = "200" -o "$code" = "206"
+          grep -Eqi '^content-type:[[:space:]]*(video/|application/octet-stream)' /tmp/douyin-download.headers
+          grep -Eqi '^content-disposition:[[:space:]]*attachment;' /tmp/douyin-download.headers
+          test -s /tmp/douyin-download.bin
+          echo "Douyin download bytes: $(wc -c </tmp/douyin-download.bin)"
+
       - name: Check live TikTok resolver
         shell: bash
         run: |
@@ -186,3 +228,21 @@ jobs:
             if (payload.data?.id && payload.data.id !== process.env.TIKTOK_ID) throw new Error("Unexpected TikTok post ID");
             if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
           '
+
+      - name: Check live TikTok Vercel download
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --max-time 60 \
+            -H 'Range: bytes=0-1023' \
+            -D /tmp/tiktok-download.headers \
+            -o /tmp/tiktok-download.bin \
+            -w "%{http_code}" \
+            -G --data-urlencode "url=$TIKTOK_URL" \
+            "$TIKTOK_DOWNLOAD_API")
+          cat /tmp/tiktok-download.headers
+          test "$code" = "200" -o "$code" = "206"
+          grep -Eqi '^content-type:[[:space:]]*(video/|application/octet-stream)' /tmp/tiktok-download.headers
+          grep -Eqi '^content-disposition:[[:space:]]*attachment;' /tmp/tiktok-download.headers
+          test -s /tmp/tiktok-download.bin
+          echo "TikTok download bytes: $(wc -c </tmp/tiktok-download.bin)"
