@@ -294,7 +294,7 @@ export default {
       return json({
         ok: true,
         service: "savedownloader",
-        version: "0.5.0-instagram-cloudflare-preview",
+        version: "0.5.0",
         providers: ["douyin", "tiktok", "instagram"],
         instagramDelivery: "cloudflare",
         deployment: {
