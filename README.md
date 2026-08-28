@@ -1,6 +1,6 @@
 # SaveDownloader
 
-SaveDownloader is a lightweight public Douyin and TikTok media resolver designed for Cloudflare Workers + Static Assets.
+SaveDownloader is a lightweight public Douyin and TikTok media downloader. The website, static assets, resolvers, and Douyin fallback run on Cloudflare Workers + Static Assets. TikTok video delivery uses a small Vercel backend because TikTok media CDN requests were unreliable from Cloudflare egress.
 
 The current public release supports Douyin and TikTok.
 
@@ -10,15 +10,27 @@ The current public release supports Douyin and TikTok.
 
 ```text
 Browser
-  ├─ static HTML/CSS/JS (Workers Static Assets)
-  └─ POST /api/resolve
-          ├─ Douyin resolver
-          │    └─ public Douyin web data
-          └─ TikTok resolver
-               └─ public TikTok page data
+  ├─ static HTML/CSS/JS → Cloudflare Static Assets
+  ├─ POST /api/resolve → Cloudflare Worker
+  │    ├─ Douyin resolver → public Douyin web data
+  │    └─ TikTok resolver → public TikTok page data
+  ├─ Douyin download
+  │    ├─ direct public media CDN when allowed
+  │    └─ /api/download/douyin → Cloudflare Worker fallback
+  └─ TikTok download
+       └─ savedownloader-tiktok-api.vercel.app/api/download → Vercel Node Function
 ```
 
-Only `/api/*` is configured to invoke Worker code. Normal pages and assets are served as static assets. Resolved media is returned to the browser rather than permanently archived by the Worker.
+Only `/api/*` is configured to invoke Worker code. Normal pages and assets are served as static assets. Media is streamed on demand and is not permanently archived by SaveDownloader.
+
+## Analytics
+
+Production pages load Google Analytics only on `savedownloader.com` and `www.savedownloader.com`. The frontend records aggregate product events without sending the pasted media URL:
+
+- `resolve_success`
+- `resolve_failed`
+- `download_douyin`
+- `download_tiktok`
 
 ## Local development
 
@@ -44,6 +56,8 @@ After a version is tested, promote that version to production in Cloudflare. The
 
 The Cloudflare project uses `wrangler.jsonc` as the source of truth. Static files live in `public/`, Worker code in `src/`, and provider implementations in `src/providers/`.
 
+The TikTok Vercel backend lives in `vercel-tiktok-api/` and is deployed separately from the Cloudflare Worker.
+
 ## Release pages
 
 - `/` — multi-platform SaveDownloader homepage
@@ -60,4 +74,4 @@ The Cloudflare project uses `wrangler.jsonc` as the source of truth. Static file
 - No private/login-only or paywalled content.
 - No DRM/access-control bypass.
 - No permanent media library by design.
-- Input URLs are host-validated before outbound requests to reduce SSRF risk.
+- Input URLs and outbound media hosts are validated to reduce SSRF risk.
