@@ -8,6 +8,7 @@ on:
       - 'test/**'
       - 'release/**'
       - 'fix/**'
+      - 'seo/**'
   pull_request:
     branches: [main]
 
@@ -54,6 +55,7 @@ jobs:
             public/instagram-downloader/index.html
             public/guides/index.html
             public/how-to-download-douyin-videos/index.html
+            public/how-to-download-douyin-short-links/index.html
             public/how-to-download-tiktok-videos/index.html
             public/how-to-download-instagram-videos-and-photos/index.html
             public/about/index.html
@@ -82,6 +84,7 @@ jobs:
             'public/instagram-downloader/index.html',
             'public/guides/index.html',
             'public/how-to-download-douyin-videos/index.html',
+            'public/how-to-download-douyin-short-links/index.html',
             'public/how-to-download-tiktok-videos/index.html',
             'public/how-to-download-instagram-videos-and-photos/index.html',
             'public/about/index.html',
@@ -158,6 +161,7 @@ jobs:
             public/instagram-downloader/index.html
             public/guides/index.html
             public/how-to-download-douyin-videos/index.html
+            public/how-to-download-douyin-short-links/index.html
             public/how-to-download-tiktok-videos/index.html
             public/how-to-download-instagram-videos-and-photos/index.html
             public/contact/index.html
@@ -179,6 +183,7 @@ jobs:
             'https://savedownloader.com/instagram-downloader/'
             'https://savedownloader.com/guides/'
             'https://savedownloader.com/how-to-download-douyin-videos/'
+            'https://savedownloader.com/how-to-download-douyin-short-links/'
             'https://savedownloader.com/how-to-download-tiktok-videos/'
             'https://savedownloader.com/how-to-download-instagram-videos-and-photos/'
             'https://savedownloader.com/contact/'
@@ -200,6 +205,9 @@ jobs:
           grep -Fq '/how-to-download-instagram-videos-and-photos/' public/index.html
           grep -Fq '/instagram-downloader/' public/guides/index.html
           grep -Fq '/how-to-download-instagram-videos-and-photos/' public/guides/index.html
+          grep -Fq '/how-to-download-douyin-short-links/' public/guides/index.html
+          grep -Fq 'v.douyin.com' public/how-to-download-douyin-short-links/index.html
+          grep -Fq 'https://savedownloader.com/' README.md
           grep -Fq '/how-to-download-instagram-videos-and-photos/' public/instagram-downloader/index.html
           ! grep -Fqi 'preview version' public/instagram-downloader/index.html
           ! grep -Fqi 'scope of this preview' public/instagram-downloader/index.html
@@ -218,6 +226,7 @@ jobs:
             'public/instagram-downloader/index.html',
             'public/guides/index.html',
             'public/how-to-download-douyin-videos/index.html',
+            'public/how-to-download-douyin-short-links/index.html',
             'public/how-to-download-tiktok-videos/index.html',
             'public/how-to-download-instagram-videos-and-photos/index.html'
           ];

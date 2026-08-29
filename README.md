@@ -1,8 +1,10 @@
 # SaveDownloader
 
-SaveDownloader is a lightweight public Douyin and TikTok media downloader. The website, static assets, resolvers, and Douyin fallback run on Cloudflare Workers + Static Assets. TikTok video delivery uses a small Vercel backend because TikTok media CDN requests were unreliable from Cloudflare egress.
+**Live website:** [https://savedownloader.com/](https://savedownloader.com/)
 
-The current public release supports Douyin and TikTok.
+SaveDownloader is a lightweight browser-based downloader for supported public Instagram, Douyin, and TikTok media. The main website, static assets, resolvers, Instagram delivery, and Douyin delivery run on Cloudflare Workers + Static Assets. TikTok video delivery uses a small Vercel backend because TikTok media CDN requests were unreliable from Cloudflare egress.
+
+The current public release supports Instagram Reels, videos, photos and compatible carousels; public Douyin videos and supported share links; and supported public TikTok media.
 
 > Use SaveDownloader only for media you own or have permission to save. Private/authenticated, paywalled, DRM-protected, and other access-controlled content is out of scope.
 
@@ -12,8 +14,11 @@ The current public release supports Douyin and TikTok.
 Browser
   ├─ static HTML/CSS/JS → Cloudflare Static Assets
   ├─ POST /api/resolve → Cloudflare Worker
+  │    ├─ Instagram resolver → public Instagram web data
   │    ├─ Douyin resolver → public Douyin web data
   │    └─ TikTok resolver → public TikTok page data
+  ├─ Instagram download
+  │    └─ /api/download/instagram → Cloudflare Worker
   ├─ Douyin download
   │    ├─ direct public media CDN when allowed
   │    └─ /api/download/douyin → Cloudflare Worker fallback
@@ -25,12 +30,7 @@ Only `/api/*` is configured to invoke Worker code. Normal pages and assets are s
 
 ## Analytics
 
-Production pages load Google Analytics only on `savedownloader.com` and `www.savedownloader.com`. The frontend records aggregate product events without sending the pasted media URL:
-
-- `resolve_success`
-- `resolve_failed`
-- `download_douyin`
-- `download_tiktok`
+Production pages load Google Analytics only on `savedownloader.com` and `www.savedownloader.com` after analytics consent is granted. The frontend records aggregate product events without sending the pasted media URL, including provider resolution and download actions.
 
 ## Local development
 
@@ -60,16 +60,17 @@ The TikTok Vercel backend lives in `vercel-tiktok-api/` and is deployed separate
 
 ## Release pages
 
-- `/` — multi-platform SaveDownloader homepage
-- `/douyin-downloader/` — Douyin downloader landing page
-- `/tiktok-downloader/` — TikTok downloader landing page
-- `/how-to-download-douyin-videos/` — Douyin help and troubleshooting guide
+- [SaveDownloader homepage](https://savedownloader.com/) — multi-platform entry point
+- [Instagram Downloader](https://savedownloader.com/instagram-downloader/) — public Reels, videos, photos, and supported carousel media
+- [Douyin Downloader](https://savedownloader.com/douyin-downloader/) — public Douyin videos and supported share-link formats
+- [TikTok Downloader](https://savedownloader.com/tiktok-downloader/) — supported public TikTok media
+- [Guides](https://savedownloader.com/guides/) — platform and troubleshooting guides
 - `/about/`, `/contact/` — trust and contact pages
-- `/privacy/`, `/terms/`, `/copyright/` — legal pages
+- `/privacy/`, `/cookies/`, `/terms/`, `/copyright/` — legal and consent pages
 
 ## Safety and privacy boundaries
 
-- Supported public Douyin and TikTok URLs only.
+- Supported public Instagram, Douyin, and TikTok URLs only.
 - No account credentials or private login cookies.
 - No private/login-only or paywalled content.
 - No DRM/access-control bypass.
