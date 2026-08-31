@@ -18,8 +18,36 @@
 
   window.dataLayer = window.dataLayer || [];
   window.gtag = function gtag() {
-    if (consent !== "granted" || analyticsFreePaths.has(window.location.pathname)) return;
+    const command = arguments[0];
+
+    // Consent commands must always reach the queue. Measurement commands are
+    // blocked until analytics consent is granted, and remain disabled on the
+    // privacy/cookies pages by design.
+    if (
+      command !== "consent" &&
+      (consent !== "granted" || analyticsFreePaths.has(window.location.pathname))
+    ) return;
+
     window.dataLayer.push(arguments);
+  };
+
+  // Consent Mode v2 defaults. SaveDownloader does not use Google advertising
+  // products, so ad-related consent remains denied even when analytics is
+  // accepted. The Google tag itself is not loaded until analytics is granted.
+  window.gtag("consent", "default", {
+    analytics_storage: "denied",
+    ad_storage: "denied",
+    ad_user_data: "denied",
+    ad_personalization: "denied"
+  });
+
+  const updateConsentState = (value) => {
+    window.gtag("consent", "update", {
+      analytics_storage: value === "granted" ? "granted" : "denied",
+      ad_storage: "denied",
+      ad_user_data: "denied",
+      ad_personalization: "denied"
+    });
   };
 
   const ensureConsentStyles = () => {
@@ -41,9 +69,7 @@
 
     analyticsLoaded = true;
 
-    // Initialize GA4 through the gtag command queue exactly as Google's
-    // installation snippet expects. The consent guard above ensures these
-    // commands are queued only after analytics consent has been granted.
+    // Initialize GA4 only after the consent update has been queued.
     window.gtag("js", new Date());
     window.gtag("config", MEASUREMENT_ID);
 
@@ -60,7 +86,12 @@
   const persistConsent = (value) => {
     consent = value;
     try { localStorage.setItem(CONSENT_KEY, value); } catch {}
+
+    // Google recommends updating consent on the page where the choice occurs,
+    // before measurement/config commands or any page transition.
+    updateConsentState(value);
     removeBanner();
+
     if (value === "granted") loadAnalytics();
   };
 
@@ -96,6 +127,13 @@
     document.querySelectorAll('[data-consent-settings]').forEach((control) => {
       control.addEventListener("click", () => renderBanner(true));
     });
+
+    if (consent === "granted" || consent === "denied") {
+      // Re-apply the persisted choice on each page load. The default-denied
+      // command above is intentionally queued first.
+      updateConsentState(consent);
+    }
+
     if (consent === "granted") loadAnalytics();
     if (!consent) renderBanner(false);
   };
