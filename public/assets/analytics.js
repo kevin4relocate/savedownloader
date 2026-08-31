@@ -40,8 +40,12 @@
     ) return;
 
     analyticsLoaded = true;
-    window.dataLayer.push(["js", new Date()]);
-    window.dataLayer.push(["config", MEASUREMENT_ID]);
+
+    // Initialize GA4 through the gtag command queue exactly as Google's
+    // installation snippet expects. The consent guard above ensures these
+    // commands are queued only after analytics consent has been granted.
+    window.gtag("js", new Date());
+    window.gtag("config", MEASUREMENT_ID);
 
     const script = document.createElement("script");
     script.async = true;
