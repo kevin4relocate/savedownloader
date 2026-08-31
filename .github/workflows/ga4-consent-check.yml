@@ -1,0 +1,57 @@
+name: GA4 Consent Check
+
+on:
+  push:
+    branches:
+      - main
+      - 'fix/**'
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  consent-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate analytics JavaScript
+        run: node --check public/assets/analytics.js
+
+      - name: Check Consent Mode v2 and strict loading
+        run: |
+          set -euo pipefail
+          grep -Fq 'const MEASUREMENT_ID = "G-07B50P20QM"' public/assets/analytics.js
+          grep -Fq 'window.gtag("consent", "default"' public/assets/analytics.js
+          grep -Fq 'window.gtag("consent", "update"' public/assets/analytics.js
+          grep -Fq 'analytics_storage: "denied"' public/assets/analytics.js
+          grep -Fq 'ad_storage: "denied"' public/assets/analytics.js
+          grep -Fq 'ad_user_data: "denied"' public/assets/analytics.js
+          grep -Fq 'ad_personalization: "denied"' public/assets/analytics.js
+          grep -Fq 'analytics_storage: value === "granted" ? "granted" : "denied"' public/assets/analytics.js
+          grep -Fq 'consent !== "granted"' public/assets/analytics.js
+          grep -Fq 'https://www.googletagmanager.com/gtag/js?id=' public/assets/analytics.js
+          ! grep -Fq 'window.dataLayer.push(["config"' public/assets/analytics.js
+          ! grep -Fq 'window.dataLayer.push(["js"' public/assets/analytics.js
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const source = fs.readFileSync('public/assets/analytics.js', 'utf8');
+          const consentDefault = source.indexOf('window.gtag("consent", "default"');
+          const consentUpdate = source.indexOf('window.gtag("consent", "update"');
+          const gaConfig = source.indexOf('window.gtag("config", MEASUREMENT_ID)');
+          const tagLoad = source.indexOf('https://www.googletagmanager.com/gtag/js?id=');
+          const loadFunction = source.indexOf('const loadAnalytics = () =>');
+
+          if (consentDefault < 0) throw new Error('Missing Consent Mode default command');
+          if (consentUpdate < 0) throw new Error('Missing Consent Mode update command');
+          if (gaConfig < 0) throw new Error('Missing GA4 config command');
+          if (consentDefault > gaConfig) throw new Error('Consent default must be defined before GA4 config');
+          if (loadFunction < 0 || tagLoad < loadFunction) throw new Error('Google tag must only be created inside loadAnalytics');
+          if (!source.includes('ad_storage: "denied"') || !source.includes('ad_user_data: "denied"') || !source.includes('ad_personalization: "denied"')) {
+            throw new Error('Advertising consent must remain denied');
+          }
+          NODE
