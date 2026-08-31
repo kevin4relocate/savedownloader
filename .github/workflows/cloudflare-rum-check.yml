@@ -1,0 +1,27 @@
+name: Cloudflare RUM Check
+
+on:
+  push:
+    branches:
+      - main
+      - 'fix/**'
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rum-csp:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Cloudflare Web Analytics CSP
+        run: |
+          set -euo pipefail
+          test -f public/_headers
+          grep -Fq 'Content-Security-Policy:' public/_headers
+          grep -Fq 'https://static.cloudflareinsights.com' public/_headers
+          grep -Fq "connect-src 'self'" public/_headers
