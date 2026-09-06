@@ -50,6 +50,7 @@ jobs:
           ! grep -Fq 'instagramLink' public/assets/site-shell.js
           nav_pages=(
             public/index.html
+            public/404.html
             public/douyin-downloader/index.html
             public/tiktok-downloader/index.html
             public/instagram-downloader/index.html
@@ -79,6 +80,7 @@ jobs:
           const fs = require('node:fs');
           const pages = [
             'public/index.html',
+            'public/404.html',
             'public/douyin-downloader/index.html',
             'public/tiktok-downloader/index.html',
             'public/instagram-downloader/index.html',
@@ -196,6 +198,7 @@ jobs:
             grep -Fq "<loc>${url}</loc>" public/sitemap.xml
           done
           grep -Fq 'Sitemap: https://savedownloader.com/sitemap.xml' public/robots.txt
+          grep -Fq 'Instagram' public/site.webmanifest
           grep -Fq '<meta name="application-name" content="SaveDownloader">' public/index.html
           grep -Fq '<meta property="og:site_name" content="SaveDownloader">' public/index.html
           grep -Fq '"@type":"WebSite"' public/index.html
