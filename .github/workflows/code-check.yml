@@ -124,6 +124,9 @@ jobs:
         run: |
           node --check vercel-tiktok-api/api/health.js
           node --check vercel-tiktok-api/api/download.js
+          grep -Fq "function safeId(value)" vercel-tiktok-api/api/download.js
+          grep -Fq "x-content-type-options" vercel-tiktok-api/api/download.js
+          grep -Fq "safeId(resolved.id)" vercel-tiktok-api/api/download.js
       - name: Check Instagram Cloudflare-only delivery
         run: |
           set -euo pipefail
