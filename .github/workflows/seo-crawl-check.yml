@@ -37,7 +37,7 @@ jobs:
             test -f "$page"
             grep -Fq '<meta name="robots" content="index,follow' "$page"
             grep -Fq 'rel="canonical"' "$page"
-            ! grep -Eqi '<meta[^>]+name=["'"'"']robots["'"'"'][^>]+content=["'"'"'][^"'"'"']*noindex' "$page"
+            ! grep -Fqi 'noindex' "$page"
           done
 
           # Homepage must directly expose the discovered-but-not-indexed guide URLs.
