@@ -19,6 +19,10 @@ function assertTikTokUrl(value) {
   return url;
 }
 
+function safeId(value) {
+  return String(value || 'video').replace(/[^0-9A-Za-z_-]/g, '') || 'video';
+}
+
 function itemId(item) {
   return String(item?.id ?? item?.itemId ?? item?.awemeId ?? '');
 }
@@ -147,6 +151,7 @@ async function fetchCandidate(url, sourceUrl, range) {
 
 export default async function handler(req, res) {
   res.setHeader('cache-control', 'private, no-store');
+  res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('x-robots-tag', 'noindex, nofollow, noarchive');
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'Method not allowed' });
 
@@ -163,7 +168,7 @@ export default async function handler(req, res) {
         const value = media.headers.get(name);
         if (value) res.setHeader(name, value);
       }
-      res.setHeader('content-disposition', `attachment; filename="tiktok-${resolved.id}.mp4"`);
+      res.setHeader('content-disposition', `attachment; filename="tiktok-${safeId(resolved.id)}.mp4"`);
       res.statusCode = media.status;
       if (!media.body) return res.end();
       Readable.fromWeb(media.body).pipe(res);
