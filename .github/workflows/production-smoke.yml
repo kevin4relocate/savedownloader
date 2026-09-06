@@ -27,9 +27,9 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const health = JSON.parse(fs.readFileSync('/tmp/health.json', 'utf8'));
-          if (health?.version !== '0.4.0') throw new Error(`Unexpected version: ${health?.version}`);
-          if (!Array.isArray(health?.providers) || !health.providers.includes('douyin') || !health.providers.includes('tiktok')) {
-            throw new Error('Expected Douyin and TikTok providers');
+          if (health?.version !== '0.5.0') throw new Error(`Unexpected version: ${health?.version}`);
+          if (!Array.isArray(health?.providers) || !health.providers.includes('douyin') || !health.providers.includes('tiktok') || !health.providers.includes('instagram')) {
+            throw new Error('Expected Instagram, Douyin, and TikTok providers');
           }
           console.log(JSON.stringify(health, null, 2));
           NODE
@@ -56,10 +56,16 @@ jobs:
             "/"
             "/douyin-downloader/"
             "/tiktok-downloader/"
+            "/instagram-downloader/"
+            "/guides/"
             "/how-to-download-douyin-videos/"
+            "/how-to-download-douyin-short-links/"
+            "/how-to-download-tiktok-videos/"
+            "/how-to-download-instagram-videos-and-photos/"
             "/about/"
             "/contact/"
             "/privacy/"
+            "/cookies/"
             "/terms/"
             "/copyright/"
           )
@@ -94,6 +100,10 @@ jobs:
           grep -Fq 'savedownloader-tiktok-api.vercel.app/api/download' <<<"$app"
           grep -Fq '/api/download/douyin' <<<"$app"
 
+          instagram=$(curl -fsS --max-time 20 "$BASE_URL/assets/instagram.js")
+          grep -Fq 'download_instagram' <<<"$instagram"
+          grep -Fq 'download_instagram_all' <<<"$instagram"
+
           curl -fsSI --max-time 20 "$BASE_URL/" >/tmp/home.headers
           grep -Eqi '^content-security-policy:.*https://www\.googletagmanager\.com' /tmp/home.headers
 
@@ -102,12 +112,12 @@ jobs:
         run: |
           set -euo pipefail
           html=$(curl -fsS --max-time 20 "$BASE_URL/")
+          grep -qi 'Instagram' <<<"$html"
           grep -qi 'Douyin' <<<"$html"
           grep -qi 'TikTok' <<<"$html"
-          if grep -Eqi 'Instagram' <<<"$html"; then
-            echo "Homepage should not advertise untested platforms."
-            exit 1
-          fi
+          grep -Fq '/instagram-downloader/' <<<"$html"
+          grep -Fq '/douyin-downloader/' <<<"$html"
+          grep -Fq '/tiktok-downloader/' <<<"$html"
 
       - name: Check security and indexing headers
         shell: bash
@@ -145,12 +155,114 @@ jobs:
 
           sitemap=$(curl -fsS --max-time 20 "$BASE_URL/sitemap.xml")
           grep -qi '<urlset' <<<"$sitemap"
-          for path in '' 'douyin-downloader/' 'tiktok-downloader/' 'how-to-download-douyin-videos/' 'about/' 'contact/' 'privacy/' 'terms/' 'copyright/'; do
+          for path in '' 'douyin-downloader/' 'tiktok-downloader/' 'instagram-downloader/' 'guides/' 'how-to-download-douyin-videos/' 'how-to-download-douyin-short-links/' 'how-to-download-tiktok-videos/' 'how-to-download-instagram-videos-and-photos/' 'about/' 'contact/' 'privacy/' 'cookies/' 'terms/' 'copyright/'; do
             grep -Fq "https://savedownloader.com/$path" <<<"$sitemap"
           done
 
           curl -fsS --max-time 20 "$BASE_URL/favicon.svg" | grep -qi '<svg'
-          curl -fsS --max-time 20 "$BASE_URL/site.webmanifest" | grep -qi 'SaveDownloader'
+          manifest=$(curl -fsS --max-time 20 "$BASE_URL/site.webmanifest")
+          grep -qi 'SaveDownloader' <<<"$manifest"
+          grep -qi 'Instagram' <<<"$manifest"
+
+          code=$(curl -sS -o /dev/null -D /tmp/download-redirect.headers -w "%{http_code}" --max-time 20 "$BASE_URL/download")
+          test "$code" = "301" -o "$code" = "308"
+          grep -Eqi '^location:[[:space:]]*/?[[:space:]]*$|^location:[[:space:]]*https://savedownloader\.com/?[[:space:]]*
+
+      - name: Check 404 behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/not-found.html -w "%{http_code}" --max-time 20 "$BASE_URL/this-page-does-not-exist-release-check")
+          test "$code" = "404"
+          grep -qi 'noindex' /tmp/not-found.html
+          grep -qi 'Page not found' /tmp/not-found.html
+
+      - name: Check resolver rejects unsupported hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/resolve.json -w "%{http_code}" --max-time 20 \
+            -H "content-type: application/json" \
+            -d '{"url":"https://example.com/video/123"}' \
+            "$BASE_URL/api/resolve")
+          cat /tmp/resolve.json
+          test "$code" = "422"
+          grep -qi "not supported" /tmp/resolve.json
+
+      - name: Check live Douyin resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/douyin.json -w "%{http_code}" --max-time 30 \
+            -H "content-type: application/json" \
+            -d "{\"url\":\"$DOUYIN_URL\"}" \
+            "$BASE_URL/api/resolve")
+          cat /tmp/douyin.json
+          test "$code" = "200"
+          node -e '
+            const fs = require("fs");
+            const payload = JSON.parse(fs.readFileSync("/tmp/douyin.json", "utf8"));
+            if (!payload.ok) throw new Error(payload.error || "Resolver returned ok=false");
+            if (payload.data?.platform !== "douyin") throw new Error("Unexpected platform");
+            if (payload.data?.id !== process.env.DOUYIN_ID) throw new Error("Unexpected Douyin post ID");
+            if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
+          '
+
+      - name: Check live Douyin download fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --max-time 60 \
+            -H 'Range: bytes=0-1023' \
+            -D /tmp/douyin-download.headers \
+            -o /tmp/douyin-download.bin \
+            -w "%{http_code}" \
+            -G --data-urlencode "url=$DOUYIN_URL" \
+            "$BASE_URL/api/download/douyin")
+          cat /tmp/douyin-download.headers
+          test "$code" = "200" -o "$code" = "206"
+          grep -Eqi '^content-type:[[:space:]]*(video/|application/octet-stream)' /tmp/douyin-download.headers
+          grep -Eqi '^content-disposition:[[:space:]]*attachment;' /tmp/douyin-download.headers
+          test -s /tmp/douyin-download.bin
+          echo "Douyin download bytes: $(wc -c </tmp/douyin-download.bin)"
+
+      - name: Check live TikTok resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/tiktok.json -w "%{http_code}" --max-time 45 \
+            -H "content-type: application/json" \
+            -d "{\"url\":\"$TIKTOK_URL\"}" \
+            "$BASE_URL/api/resolve")
+          cat /tmp/tiktok.json
+          test "$code" = "200"
+          node -e '
+            const fs = require("fs");
+            const payload = JSON.parse(fs.readFileSync("/tmp/tiktok.json", "utf8"));
+            if (!payload.ok) throw new Error(payload.error || "Resolver returned ok=false");
+            if (payload.data?.platform !== "tiktok") throw new Error("Unexpected platform");
+            if (payload.data?.id && payload.data.id !== process.env.TIKTOK_ID) throw new Error("Unexpected TikTok post ID");
+            if (!payload.data?.videoUrl && !(payload.data?.images?.length > 0)) throw new Error("No downloadable media URL returned");
+          '
+
+      - name: Check live TikTok Vercel download
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --max-time 60 \
+            -H 'Range: bytes=0-1023' \
+            -D /tmp/tiktok-download.headers \
+            -o /tmp/tiktok-download.bin \
+            -w "%{http_code}" \
+            -G --data-urlencode "url=$TIKTOK_URL" \
+            "$TIKTOK_DOWNLOAD_API")
+          cat /tmp/tiktok-download.headers
+          test "$code" = "200" -o "$code" = "206"
+          grep -Eqi '^content-type:[[:space:]]*(video/|application/octet-stream)' /tmp/tiktok-download.headers
+          grep -Eqi '^content-disposition:[[:space:]]*attachment;' /tmp/tiktok-download.headers
+          test -s /tmp/tiktok-download.bin
+          echo "TikTok download bytes: $(wc -c </tmp/tiktok-download.bin)"
+ /tmp/download-redirect.headers
 
       - name: Check 404 behavior
         shell: bash
