@@ -1,7 +1,7 @@
 {
   "name": "SaveDownloader",
   "short_name": "SaveDownloader",
-  "description": "Browser-based downloader for supported public Douyin and TikTok media.",
+  "description": "Browser-based downloader for supported public Instagram, Douyin, and TikTok media.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
