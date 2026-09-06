@@ -1,0 +1,122 @@
+name: SEO Crawl Check
+
+on:
+  push:
+    branches:
+      - main
+      - 'seo/**'
+      - 'fix/**'
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  crawl-graph:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate crawlable priority pages
+        run: |
+          set -euo pipefail
+
+          priority_pages=(
+            public/guides/index.html
+            public/how-to-download-douyin-short-links/index.html
+            public/how-to-download-douyin-videos/index.html
+            public/how-to-download-instagram-videos-and-photos/index.html
+            public/how-to-download-tiktok-videos/index.html
+            public/instagram-downloader/index.html
+            public/tiktok-downloader/index.html
+          )
+
+          for page in "${priority_pages[@]}"; do
+            test -f "$page"
+            grep -Fq '<meta name="robots" content="index,follow' "$page"
+            grep -Fq 'rel="canonical"' "$page"
+            ! grep -Fqi 'noindex' "$page"
+          done
+
+          # Homepage must directly expose the discovered-but-not-indexed guide URLs.
+          homepage_links=(
+            '/guides/'
+            '/instagram-downloader/'
+            '/tiktok-downloader/'
+            '/how-to-download-douyin-videos/'
+            '/how-to-download-douyin-short-links/'
+            '/how-to-download-instagram-videos-and-photos/'
+            '/how-to-download-tiktok-videos/'
+          )
+          for href in "${homepage_links[@]}"; do
+            grep -Fq "href=\"${href}\"" public/index.html
+          done
+
+          # Reciprocal internal links: each platform downloader points to its guide.
+          grep -Fq 'href="/how-to-download-douyin-videos/"' public/douyin-downloader/index.html
+          grep -Fq 'href="/how-to-download-douyin-short-links/"' public/douyin-downloader/index.html
+          grep -Fq 'href="/how-to-download-tiktok-videos/"' public/tiktok-downloader/index.html
+          grep -Fq 'href="/how-to-download-instagram-videos-and-photos/"' public/instagram-downloader/index.html
+
+          # Each guide points back to the relevant tool and the guide hub.
+          grep -Fq 'href="/douyin-downloader/"' public/how-to-download-douyin-videos/index.html
+          grep -Fq 'href="/douyin-downloader/"' public/how-to-download-douyin-short-links/index.html
+          grep -Fq 'href="/tiktok-downloader/"' public/how-to-download-tiktok-videos/index.html
+          grep -Fq 'href="/instagram-downloader/"' public/how-to-download-instagram-videos-and-photos/index.html
+          for guide in             public/how-to-download-douyin-videos/index.html             public/how-to-download-douyin-short-links/index.html             public/how-to-download-tiktok-videos/index.html             public/how-to-download-instagram-videos-and-photos/index.html; do
+            grep -Fq 'href="/guides/"' "$guide"
+          done
+
+          # Sitemap must contain every priority URL with an accurate modification date.
+          priority_urls=(
+            'https://savedownloader.com/'
+            'https://savedownloader.com/douyin-downloader/'
+            'https://savedownloader.com/tiktok-downloader/'
+            'https://savedownloader.com/instagram-downloader/'
+            'https://savedownloader.com/guides/'
+            'https://savedownloader.com/how-to-download-douyin-videos/'
+            'https://savedownloader.com/how-to-download-douyin-short-links/'
+            'https://savedownloader.com/how-to-download-tiktok-videos/'
+            'https://savedownloader.com/how-to-download-instagram-videos-and-photos/'
+          )
+          for url in "${priority_urls[@]}"; do
+            grep -Fq "<url><loc>${url}</loc><lastmod>2026-09-07</lastmod></url>" public/sitemap.xml
+          done
+
+          # robots.txt leaves public pages crawlable and only excludes API routes.
+          grep -Fxq 'Allow: /' public/robots.txt
+          grep -Fxq 'Disallow: /api/' public/robots.txt
+          grep -Fq 'Sitemap: https://savedownloader.com/sitemap.xml' public/robots.txt
+
+          # Preserve a relevant permanent redirect for the legacy /download path.
+          test -f public/_redirects
+          grep -Fxq '/download / 301' public/_redirects
+          grep -Fxq '/download/ / 301' public/_redirects
+
+      - name: Validate canonical URLs
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const expected = new Map([
+            ['public/index.html', 'https://savedownloader.com/'],
+            ['public/guides/index.html', 'https://savedownloader.com/guides/'],
+            ['public/douyin-downloader/index.html', 'https://savedownloader.com/douyin-downloader/'],
+            ['public/tiktok-downloader/index.html', 'https://savedownloader.com/tiktok-downloader/'],
+            ['public/instagram-downloader/index.html', 'https://savedownloader.com/instagram-downloader/'],
+            ['public/how-to-download-douyin-videos/index.html', 'https://savedownloader.com/how-to-download-douyin-videos/'],
+            ['public/how-to-download-douyin-short-links/index.html', 'https://savedownloader.com/how-to-download-douyin-short-links/'],
+            ['public/how-to-download-tiktok-videos/index.html', 'https://savedownloader.com/how-to-download-tiktok-videos/'],
+            ['public/how-to-download-instagram-videos-and-photos/index.html', 'https://savedownloader.com/how-to-download-instagram-videos-and-photos/']
+          ]);
+
+          for (const [file, canonical] of expected) {
+            const html = fs.readFileSync(file, 'utf8');
+            const match = html.match(/<link rel="canonical" href="([^"]+)">/);
+            if (!match) throw new Error(`${file}: missing canonical`);
+            if (match[1] !== canonical) {
+              throw new Error(`${file}: expected canonical ${canonical}, found ${match[1]}`);
+            }
+          }
+          NODE
