@@ -1,0 +1,51 @@
+name: Mobile Browser Smoke (emulated)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  emulated-mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install project and mobile browser test tooling
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund @playwright/test@1.55.1
+          npx playwright install --with-deps chromium webkit
+      - name: Start local Cloudflare Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup npx wrangler dev --local --port 8787 >/tmp/savedownloader-mobile-worker.log 2>&1 &
+          echo $! >/tmp/mobile-worker.pid
+          for attempt in {1..45}; do
+            if curl -fsS --max-time 5 http://127.0.0.1:8787/api/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/savedownloader-mobile-worker.log
+          exit 1
+      - name: Run emulated iPhone WebKit and Android Chromium flows
+        run: npx playwright test --config=playwright.config.cjs
+      - name: Upload failure traces and test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-browser-report
+          path: |
+            playwright-report/
+            test-results/
+            /tmp/savedownloader-mobile-worker.log
+          if-no-files-found: ignore
+      - name: Stop local Worker
+        if: always()
+        run: |
+          if [ -f /tmp/mobile-worker.pid ]; then kill "$(cat /tmp/mobile-worker.pid)" || true; fi
