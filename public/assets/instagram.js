@@ -84,6 +84,15 @@ if(form){
     setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);
   };
 
+  const showNativeLink=(sourceUrl,index)=>{
+    setProgress('Large file: tap Download large file, then check Safari Downloads or Files.');
+    const link=document.createElement('a');
+    link.href=downloadUrl(sourceUrl,index);
+    link.className='media-button primary media-save-link';
+    link.textContent='Download large file';
+    progress.append(' ',link);
+  };
+
   const startDownload=async(sourceUrl,index,mediaType,control)=>{
     releasePendingFile();
     if(!sourceUrl){setStatus('The original Instagram post URL is missing. Resolve the post again.','error');return;}
@@ -109,15 +118,11 @@ if(form){
       const statedSize=Number(response.headers.get('content-length')||0);
       if(statedSize>maxBytes){
         await response.body?.cancel();
-        if(isIOS()){
-          setProgress('Large file: tap Download large file to open Safari Downloads.');
-          const link=document.createElement('a');
-          link.href=downloadUrl(sourceUrl,index);
-          link.className='media-button primary media-save-link';
-          link.textContent='Download large file';
-          progress.append(' ',link);
-        }else triggerDownload(sourceUrl,index);
-        setProgress('Large media file: download handed to your browser. Check Downloads for the result.');
+        if(isIOS())showNativeLink(sourceUrl,index);
+        else{
+          triggerDownload(sourceUrl,index);
+          setProgress('Large media file: download handed to your browser. Check Downloads for the result.');
+        }
         trackEvent('download_browser_handoff',{platform:'instagram',media_type:mediaType});
         return;
       }
@@ -131,15 +136,11 @@ if(form){
         total+=value.byteLength;
         if(total>maxBytes){
           await reader.cancel();
-          if(isIOS()){
-          setProgress('Large file: tap Download large file to open Safari Downloads.');
-          const link=document.createElement('a');
-          link.href=downloadUrl(sourceUrl,index);
-          link.className='media-button primary media-save-link';
-          link.textContent='Download large file';
-          progress.append(' ',link);
-        }else triggerDownload(sourceUrl,index);
-          setProgress('Large media file: download handed to your browser. Check Downloads for the result.');
+          if(isIOS())showNativeLink(sourceUrl,index);
+          else{
+            triggerDownload(sourceUrl,index);
+            setProgress('Large media file: download handed to your browser. Check Downloads for the result.');
+          }
           trackEvent('download_browser_handoff',{platform:'instagram',media_type:mediaType});
           return;
         }
