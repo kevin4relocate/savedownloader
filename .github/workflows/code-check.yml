@@ -41,6 +41,8 @@ jobs:
           node --check tests/download-contracts.test.mjs
       - name: Run downloader regression tests
         run: node --test tests/download-contracts.test.mjs
+      - name: Check mobile contracts
+        run: node --test tests/mobile-contracts.test.mjs
       - name: Check unified navigation shell
         run: |
           set -euo pipefail
