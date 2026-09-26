@@ -33,6 +33,7 @@ async function resolveCanonicalUrl(inputUrl: URL): Promise<URL> {
 
   for (let i = 0; i < 6; i += 1) {
     const response = await fetch(current, {
+      signal: AbortSignal.timeout(15000),
       method: "GET",
       redirect: "manual",
       headers: {
@@ -143,6 +144,7 @@ function extractItemFromHtml(html: string, expectedId: string | null): AnyRecord
 
 async function fetchPublicPage(url: URL): Promise<{ html: string; finalUrl: URL }> {
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(15000),
     redirect: "follow",
     headers: {
       "user-agent": DESKTOP_UA,
