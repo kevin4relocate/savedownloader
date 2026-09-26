@@ -37,6 +37,10 @@ jobs:
           node --check public/assets/analytics.js
           node --check public/assets/site-shell.js
           node --check public/assets/instagram.js
+          node --check public/assets/tiktok.js
+          node --check tests/download-contracts.test.mjs
+      - name: Run downloader regression tests
+        run: node --test tests/download-contracts.test.mjs
       - name: Check unified navigation shell
         run: |
           set -euo pipefail
