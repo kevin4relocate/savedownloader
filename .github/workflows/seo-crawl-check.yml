@@ -31,6 +31,7 @@ jobs:
             public/how-to-download-tiktok-videos/index.html
             public/video-download-troubleshooting/index.html
             public/responsible-media-downloads/index.html
+            public/instagram-carousel-zip-guide/index.html
             public/instagram-downloader/index.html
             public/tiktok-downloader/index.html
           )
@@ -53,6 +54,7 @@ jobs:
             '/how-to-download-tiktok-videos/'
             '/video-download-troubleshooting/'
             '/responsible-media-downloads/'
+            '/instagram-carousel-zip-guide/'
           )
           for href in "${homepage_links[@]}"; do
             grep -Fq "href=\"${href}\"" public/index.html
@@ -61,7 +63,11 @@ jobs:
           grep -Fq 'href="/video-download-troubleshooting/"' public/guides/index.html
 
           grep -Fq 'href="/responsible-media-downloads/"' public/guides/index.html
+          grep -Fq 'href="/instagram-carousel-zip-guide/"' public/guides/index.html
+          grep -Fq 'href="/instagram-carousel-zip-guide/"' public/instagram-downloader/index.html
           grep -Fq '<url><loc>https://savedownloader.com/responsible-media-downloads/</loc><lastmod>2026-09-27</lastmod></url>' public/sitemap.xml
+
+          grep -Fq '<url><loc>https://savedownloader.com/instagram-carousel-zip-guide/</loc><lastmod>2026-09-27</lastmod></url>' public/sitemap.xml
 
           # Reciprocal internal links: each platform downloader points to its guide.
           grep -Fq 'href="/how-to-download-douyin-videos/"' public/douyin-downloader/index.html
@@ -79,20 +85,8 @@ jobs:
           done
 
           # Sitemap must contain every priority URL with an accurate modification date.
-          priority_urls=(
-            'https://savedownloader.com/'
-            'https://savedownloader.com/douyin-downloader/'
-            'https://savedownloader.com/tiktok-downloader/'
-            'https://savedownloader.com/instagram-downloader/'
-            'https://savedownloader.com/guides/'
-            'https://savedownloader.com/how-to-download-douyin-videos/'
-            'https://savedownloader.com/how-to-download-douyin-short-links/'
-            'https://savedownloader.com/how-to-download-tiktok-videos/'
-            'https://savedownloader.com/how-to-download-instagram-videos-and-photos/'
-          )
-          for url in "${priority_urls[@]}"; do
-            grep -Fq "<url><loc>${url}</loc><lastmod>2026-09-07</lastmod></url>" public/sitemap.xml
-          done
+          # Dates reflect substantive edits; older guides keep their own real dates.
+          node tests/seo-crawl-contracts.mjs
 
           grep -Fq '<url><loc>https://savedownloader.com/video-download-troubleshooting/</loc><lastmod>2026-09-27</lastmod></url>' public/sitemap.xml
 
@@ -121,6 +115,7 @@ jobs:
             ['public/how-to-download-tiktok-videos/index.html', 'https://savedownloader.com/how-to-download-tiktok-videos/'],
             ['public/video-download-troubleshooting/index.html', 'https://savedownloader.com/video-download-troubleshooting/'],
             ['public/responsible-media-downloads/index.html', 'https://savedownloader.com/responsible-media-downloads/'],
+            ['public/instagram-carousel-zip-guide/index.html', 'https://savedownloader.com/instagram-carousel-zip-guide/'],
             ['public/how-to-download-instagram-videos-and-photos/index.html', 'https://savedownloader.com/how-to-download-instagram-videos-and-photos/']
           ]);
 
