@@ -91,12 +91,20 @@ async function fetchDouyinMedia(value: string, range: string | null): Promise<Re
     };
     if (range) headers.range = range;
 
-    const response = await fetch(current, {
-      signal: AbortSignal.timeout(25000),
-      method: "GET",
-      redirect: "manual",
-      headers
-    });
+    // Timeout only the upstream response headers: never abort an active video stream.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+    let response: Response;
+    try {
+      response = await fetch(current, {
+        signal: controller.signal,
+        method: "GET",
+        redirect: "manual",
+        headers
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
@@ -126,12 +134,20 @@ async function fetchInstagramMedia(value: string, sourceUrl: string, range: stri
     };
     if (range) headers.range = range;
 
-    const response = await fetch(current, {
-      signal: AbortSignal.timeout(25000),
-      method: "GET",
-      redirect: "manual",
-      headers
-    });
+    // Timeout only the upstream response headers: never abort an active video stream.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+    let response: Response;
+    try {
+      response = await fetch(current, {
+        signal: controller.signal,
+        method: "GET",
+        redirect: "manual",
+        headers
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
