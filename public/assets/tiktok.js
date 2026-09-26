@@ -157,8 +157,8 @@ if(form){
     result.classList.remove('show');
     setStatus('Checking the public TikTok link…','loading');
     try{
-      const response=await fetch('/api/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url})});
-      const payload=await response.json();
+      const response=await fetch('/api/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url}),signal:AbortSignal.timeout(35000)});
+      const payload=await response.json().catch(()=>({ok:false,error:`Resolver returned an unexpected response (HTTP ${response.status}). Please retry.` }));
       if(!response.ok||!payload.ok)throw new Error(payload.error||'Unable to resolve this TikTok link.');
       if(payload.data?.platform!=='tiktok')throw new Error('This page accepts TikTok links only.');
       trackEvent('resolve_success',{platform:'tiktok',media_type:payload.data?.type||'unknown'});
@@ -166,7 +166,7 @@ if(form){
       render(payload.data);
     }catch(error){
       trackEvent('resolve_failed',{platform:'tiktok'});
-      setStatus(error instanceof Error?error.message:'Something went wrong. Please try again.','error');
+      setStatus(error?.name==='TimeoutError'?'The platform did not respond in time. Please retry with the original post URL.':error instanceof Error?error.message:'Something went wrong. Please try again.','error');
     }finally{
       button.disabled=false;
     }
