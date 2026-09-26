@@ -27,7 +27,9 @@ const html='<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/js
     video:{playAddr:{urlList:['https://v.tiktokcdn.com/fixture.mp4']}}
   }}}}})+'</script>';
 function tiktokPostResponse(){
-  return new Response(html,{status:200,headers:{'content-type':'text/html'}});
+  const response=new Response(html,{status:200,headers:{'content-type':'text/html'}});
+  Object.defineProperty(response,'url',{value:postUrl});
+  return response;
 }
 async function withMockFetch(callback,run){
   const previous=globalThis.fetch;
