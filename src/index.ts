@@ -188,8 +188,9 @@ async function handleResolve(request: Request): Promise<Response> {
     }
     return json({ ok: false, error: "This platform is not supported yet." }, 422);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to resolve this link.";
-    return json({ ok: false, error: message }, 422);
+    const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+    const message = timedOut ? "The source platform took too long. Please retry the original post link." : error instanceof Error ? error.message : "Unable to resolve this link.";
+    return json({ ok: false, error: message }, timedOut ? 504 : 422);
   }
 }
 
