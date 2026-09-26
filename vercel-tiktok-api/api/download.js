@@ -132,7 +132,15 @@ async function fetchCandidate(url, sourceUrl, range) {
       'referer': sourceUrl
     };
     if (range) headers.range = range;
-    const response = await fetch(current, { method: 'GET', redirect: 'manual', headers, signal: AbortSignal.timeout(25000) });
+    // Apply a timeout to fetching headers, not to an ongoing streamed download.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+    let response;
+    try {
+      response = await fetch(current, { method: 'GET', redirect: 'manual', headers, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
       if (!location) return null;
