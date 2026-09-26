@@ -1,0 +1,34 @@
+name: Production Deployment Audit
+
+on:
+  # One-time initial audit on creating/changing this workflow, without adding
+  # third-party live media traffic to every commit.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/production-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout expected release
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read-only production audit
+        run: node scripts/production-audit.mjs
+      - name: Upload complete audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-deployment-audit
+          path: audit-results/production-audit.json
+          if-no-files-found: warn
