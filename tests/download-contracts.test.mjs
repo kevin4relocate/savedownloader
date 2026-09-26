@@ -78,7 +78,8 @@ test('download frontends use explicit error and response events',()=>{
 });
 test('Worker media routes reject non-media upstream responses',()=>{
   const worker=file('src/index.ts');
-  assert.match(worker,/AbortSignal\.timeout\(25000\)/);
+  assert.match(worker,/setTimeout\(\(\) => controller\.abort\(\), 25000\)/);
+  assert.match(worker,/clearTimeout\(timer\)/);
   assert.match(worker,/application\\\/octet-stream/);
   assert.match(worker,/timedOut \? 504/);
 });
