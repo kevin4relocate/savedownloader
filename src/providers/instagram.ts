@@ -275,6 +275,7 @@ function dedupeMedia(media: InstagramMediaItem[]): InstagramMediaItem[] {
 
 async function fetchHtml(value: string, userAgent: string): Promise<{ html: string; responseUrl: URL } | null> {
   const response = await fetch(value, {
+    signal: AbortSignal.timeout(15000),
     redirect: "follow",
     headers: {
       "user-agent": userAgent,
@@ -293,6 +294,7 @@ async function fetchPublicPage(input: URL): Promise<{ html: string; finalUrl: UR
   let current = input;
   for (let i = 0; i < 6; i += 1) {
     const response = await fetch(current, {
+      signal: AbortSignal.timeout(15000),
       redirect: "manual",
       headers: {
         "user-agent": DESKTOP_UA,
