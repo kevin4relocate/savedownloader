@@ -92,6 +92,7 @@ async function fetchDouyinMedia(value: string, range: string | null): Promise<Re
     if (range) headers.range = range;
 
     const response = await fetch(current, {
+      signal: AbortSignal.timeout(25000),
       method: "GET",
       redirect: "manual",
       headers
@@ -106,7 +107,7 @@ async function fetchDouyinMedia(value: string, range: string | null): Promise<Re
 
     if (response.status !== 200 && response.status !== 206) return null;
     const contentType = (response.headers.get("content-type") || "").toLowerCase();
-    if (contentType.includes("text/html") || contentType.includes("application/json")) return null;
+    if (!/^(video\/|application\/octet-stream)/.test(contentType)) { await response.body?.cancel(); return null; }
     return response;
   }
 
@@ -126,6 +127,7 @@ async function fetchInstagramMedia(value: string, sourceUrl: string, range: stri
     if (range) headers.range = range;
 
     const response = await fetch(current, {
+      signal: AbortSignal.timeout(25000),
       method: "GET",
       redirect: "manual",
       headers
@@ -140,7 +142,7 @@ async function fetchInstagramMedia(value: string, sourceUrl: string, range: stri
 
     if (response.status !== 200 && response.status !== 206) return null;
     const contentType = (response.headers.get("content-type") || "").toLowerCase();
-    if (contentType.includes("text/html") || contentType.includes("application/json")) return null;
+    if (!/^(video\/|image\/|application\/octet-stream)/.test(contentType)) { await response.body?.cancel(); return null; }
     return response;
   }
 
@@ -225,8 +227,9 @@ async function handleDouyinDownload(request: Request): Promise<Response> {
 
     return new Response(media.body, { status: media.status, headers });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to download this Douyin video.";
-    return json({ ok: false, error: message }, 422);
+    const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+    const message = timedOut ? "The media server took too long. Please retry using the original post link." : error instanceof Error ? error.message : "Unable to download this Douyin video.";
+    return json({ ok: false, error: message }, timedOut ? 504 : 422);
   }
 }
 
@@ -282,8 +285,9 @@ async function handleInstagramDownload(request: Request): Promise<Response> {
 
     return new Response(media.body, { status: media.status, headers });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to download this Instagram media.";
-    return json({ ok: false, error: message }, 422);
+    const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+    const message = timedOut ? "The media server took too long. Please retry using the original post link." : error instanceof Error ? error.message : "Unable to download this Instagram media.";
+    return json({ ok: false, error: message }, timedOut ? 504 : 422);
   }
 }
 
