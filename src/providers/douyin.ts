@@ -36,6 +36,7 @@ async function resolveAwemeId(inputUrl: URL): Promise<string> {
   if (direct) return direct;
 
   const response = await fetch(inputUrl, {
+    signal: AbortSignal.timeout(15000),
     redirect: "follow",
     headers: {
       "user-agent": MOBILE_UA,
@@ -169,6 +170,7 @@ function parsePublicPageItem(html: string, awemeId: string): AnyRecord | null {
 async function fetchPublicItemInfo(awemeId: string): Promise<AnyRecord | null> {
   try {
     const response = await fetch(`https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=${encodeURIComponent(awemeId)}`, {
+      signal: AbortSignal.timeout(12000),
       headers: {
         "user-agent": MOBILE_UA,
         referer: "https://www.iesdouyin.com/",
@@ -193,6 +195,7 @@ async function getAnonymousTtwid(): Promise<string> {
 
   try {
     const response = await fetch("https://ttwid.bytedance.com/ttwid/union/register/", {
+      signal: AbortSignal.timeout(12000),
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -240,7 +243,7 @@ async function fetchPublicWebDetail(awemeId: string): Promise<AnyRecord | null> 
     };
     if (ttwid) headers.cookie = ttwid;
 
-    const response = await fetch(apiUrl, { headers, redirect: "follow" });
+    const response = await fetch(apiUrl, { headers, redirect: "follow", signal: AbortSignal.timeout(12000) });
     if (!response.ok) return null;
 
     const data = await response.json() as AnyRecord;
@@ -255,6 +258,7 @@ async function fetchPublicWebDetail(awemeId: string): Promise<AnyRecord | null> 
 async function fetchHtml(url: string, userAgent: string, referer = "https://www.douyin.com/"): Promise<string | null> {
   try {
     const response = await fetch(url, {
+      signal: AbortSignal.timeout(12000),
       headers: {
         "user-agent": userAgent,
         referer,
