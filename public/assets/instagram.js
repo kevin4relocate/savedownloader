@@ -298,8 +298,8 @@ if(form){
     const entries=[];
     let offset=0;
     let totalSize=0;
-    const maxZipBytes=96*1024*1024;
-    const maxItemBytes=48*1024*1024;
+    const maxZipBytes=64*1024*1024;
+    const maxItemBytes=32*1024*1024;
 
     for(let index=0;index<data.media.length;index+=1){
       setProgress(`Fetching item ${index+1} of ${data.media.length} for ZIP…`);
@@ -436,7 +436,7 @@ if(form){
       setProgress(`ZIP prepared with ${currentData.media.length} items. Check your browser downloads to confirm it was saved.`);
       trackEvent('download_response_ok',{platform:'instagram',format:'zip',media_count:currentData.media.length});
     }catch(error){
-      const message=error instanceof Error?error.message:'Unable to create the ZIP download.';
+      const message=error?.name==='TimeoutError'?'An Instagram item timed out. Try downloading available items individually.':error instanceof Error?error.message:'Unable to create the ZIP download.';
       setProgress(message);
       setStatus(message,'error');
       trackEvent('download_failed',{platform:'instagram',format:'zip',reason:error?.name==='TimeoutError'?'timeout':'zip_error'});
