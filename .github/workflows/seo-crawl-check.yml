@@ -30,6 +30,7 @@ jobs:
             public/how-to-download-instagram-videos-and-photos/index.html
             public/how-to-download-tiktok-videos/index.html
             public/video-download-troubleshooting/index.html
+            public/responsible-media-downloads/index.html
             public/instagram-downloader/index.html
             public/tiktok-downloader/index.html
           )
@@ -51,12 +52,16 @@ jobs:
             '/how-to-download-instagram-videos-and-photos/'
             '/how-to-download-tiktok-videos/'
             '/video-download-troubleshooting/'
+            '/responsible-media-downloads/'
           )
           for href in "${homepage_links[@]}"; do
             grep -Fq "href=\"${href}\"" public/index.html
           done
 
           grep -Fq 'href="/video-download-troubleshooting/"' public/guides/index.html
+
+          grep -Fq 'href="/responsible-media-downloads/"' public/guides/index.html
+          grep -Fq '<url><loc>https://savedownloader.com/responsible-media-downloads/</loc><lastmod>2026-09-27</lastmod></url>' public/sitemap.xml
 
           # Reciprocal internal links: each platform downloader points to its guide.
           grep -Fq 'href="/how-to-download-douyin-videos/"' public/douyin-downloader/index.html
@@ -115,6 +120,7 @@ jobs:
             ['public/how-to-download-douyin-short-links/index.html', 'https://savedownloader.com/how-to-download-douyin-short-links/'],
             ['public/how-to-download-tiktok-videos/index.html', 'https://savedownloader.com/how-to-download-tiktok-videos/'],
             ['public/video-download-troubleshooting/index.html', 'https://savedownloader.com/video-download-troubleshooting/'],
+            ['public/responsible-media-downloads/index.html', 'https://savedownloader.com/responsible-media-downloads/'],
             ['public/how-to-download-instagram-videos-and-photos/index.html', 'https://savedownloader.com/how-to-download-instagram-videos-and-photos/']
           ]);
 
