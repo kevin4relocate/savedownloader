@@ -190,7 +190,14 @@ export default async function handler(req, res) {
       res.setHeader('content-disposition', `attachment; filename="tiktok-${safeId(resolved.id)}.mp4"`);
       res.statusCode = media.status;
       if (!media.body) return res.end();
-      Readable.fromWeb(media.body).pipe(res);
+      const stream=Readable.fromWeb(media.body);
+      stream.on('error',(error)=>{
+        if(res.writableEnded||res.destroyed)return;
+        if(res.headersSent)res.destroy(error);
+        else res.status(502).json({ok:false,error:'The upstream video stream stopped unexpectedly. Please try again.'});
+      });
+      res.on('close',()=>stream.destroy());
+      stream.pipe(res);
       return;
     }
     return res.status(502).json({ ok: false, error: "TikTok's media server refused this public video." });
