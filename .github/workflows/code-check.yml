@@ -43,6 +43,8 @@ jobs:
         run: node --test tests/download-contracts.test.mjs
       - name: Check mobile contracts
         run: node --test tests/mobile-contracts.test.mjs
+      - name: Verify AdSense readiness safeguards
+        run: node --test tests/adsense-readiness.test.mjs
       - name: Check unified navigation shell
         run: |
           set -euo pipefail
