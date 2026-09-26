@@ -120,21 +120,42 @@ if(form){
     const oldText=control.textContent;
     control.disabled=true;
     control.textContent='Preparing download…';
-    setStatus('Preparing your download directly from the media server…','loading');
+    setStatus('Preparing the file from the media server…','loading');
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),45000);
     try{
-      const response=await fetch(url,{mode:'cors',credentials:'omit',referrerPolicy:'no-referrer'});
+      const response=await fetch(url,{mode:'cors',credentials:'omit',referrerPolicy:'no-referrer',signal:controller.signal});
       if(!response.ok)throw new Error(`Media server returned HTTP ${response.status}.`);
-      const blob=await response.blob();
-      const objectUrl=URL.createObjectURL(blob);
+      const contentType=(response.headers.get('content-type')||'').toLowerCase();
+      if(!/^(video\/|application\/octet-stream)/.test(contentType)){
+        throw new Error('The upstream server did not return a video file.');
+      }
+      const maxBytes=48*1024*1024;
+      const statedSize=Number(response.headers.get('content-length')||0);
+      if(statedSize>maxBytes)throw new Error('The file is too large for in-browser handling.');
+      const reader=response.body?.getReader();
+      if(!reader)throw new Error('The media server returned no file data.');
+      const chunks=[];
+      let total=0;
+      while(true){
+        const {value,done}=await reader.read();
+        if(done)break;
+        total+=value.byteLength;
+        if(total>maxBytes){await reader.cancel();throw new Error('The file is too large for in-browser handling.');}
+        chunks.push(value);
+      }
+      if(!total)throw new Error('The media server returned an empty file.');
+      const objectUrl=URL.createObjectURL(new Blob(chunks,{type:contentType}));
       const anchor=document.createElement('a');
       anchor.href=objectUrl;
       anchor.download=filename;
-      anchor.style.display='none';
+      anchor.hidden=true;
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
       setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);
-      clearStatus();
+      setStatus('Video received and handed to your browser. Check Downloads to confirm it was saved.','');
+      trackEvent('download_response_ok',{platform:'douyin',delivery:'direct'});
     }catch(error){
       if(typeof fallback==='function'){
         control.disabled=false;
@@ -142,9 +163,10 @@ if(form){
         fallback();
         return;
       }
-      setStatus('Direct download was blocked by the media server. Opening the media instead.','error');
-      window.open(url,'_blank','noopener,noreferrer');
+      setStatus(error?.name==='AbortError'?'The media server timed out. Please retry.':error instanceof Error?error.message:'Direct download failed.','error');
+      trackEvent('download_failed',{platform:'douyin',reason:error?.name==='AbortError'?'timeout':'response_error'});
     }finally{
+      clearTimeout(timeout);
       if(control.disabled){
         control.disabled=false;
         control.textContent=oldText;
