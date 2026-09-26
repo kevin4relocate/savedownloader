@@ -194,7 +194,10 @@ export default async function handler(req, res) {
       stream.on('error',(error)=>{
         if(res.writableEnded||res.destroyed)return;
         if(res.headersSent)res.destroy(error);
-        else res.status(502).json({ok:false,error:'The upstream video stream stopped unexpectedly. Please try again.'});
+        else {
+          for(const header of ['content-disposition','content-length','content-range','content-type','accept-ranges','etag','last-modified'])res.removeHeader(header);
+          res.status(502).json({ok:false,error:'The upstream video stream stopped unexpectedly. Please try again.'});
+        }
       });
       res.on('close',()=>stream.destroy());
       stream.pipe(res);
