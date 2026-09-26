@@ -66,7 +66,7 @@ if(form){
     setProgress(`Preparing ${mediaType} ${index+1} for download…`);
     triggerDownload(sourceUrl,index);
     setTimeout(()=>{
-      setProgress('Download started.');
+      setProgress('Download requested. Check your browser downloads; if the file does not appear, try resolving the post again.');
       control.disabled=false;
       control.textContent=oldText;
     },1200);
@@ -358,7 +358,7 @@ if(form){
       const zip=await buildZip(currentData);
       setProgress('ZIP ready. Starting download…');
       triggerBlobDownload(zip,`instagram-${safeId(currentData.id)}.zip`);
-      setProgress(`Downloaded ZIP with ${currentData.media.length} items.`);
+      setProgress(`ZIP prepared with ${currentData.media.length} items. Check your browser downloads to confirm it was saved.`);
     }catch(error){
       const message=error instanceof Error?error.message:'Unable to create the ZIP download.';
       setProgress(message);
