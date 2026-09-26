@@ -100,6 +100,7 @@ async function resolvePost(input) {
   const source = assertTikTokUrl(input);
   const response = await fetch(source, {
     redirect: 'follow',
+    signal: AbortSignal.timeout(20000),
     headers: {
       'user-agent': UA,
       'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -131,7 +132,7 @@ async function fetchCandidate(url, sourceUrl, range) {
       'referer': sourceUrl
     };
     if (range) headers.range = range;
-    const response = await fetch(current, { method: 'GET', redirect: 'manual', headers });
+    const response = await fetch(current, { method: 'GET', redirect: 'manual', headers, signal: AbortSignal.timeout(25000) });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
       if (!location) return null;
@@ -143,7 +144,7 @@ async function fetchCandidate(url, sourceUrl, range) {
     }
     if (response.status !== 200 && response.status !== 206) return null;
     const type = (response.headers.get('content-type') || '').toLowerCase();
-    if (type.includes('text/html') || type.includes('application/json')) return null;
+    if (!/^(video\/|application\/octet-stream)/.test(type)) { await response.body?.cancel(); return null; }
     return response;
   }
   return null;
@@ -176,6 +177,7 @@ export default async function handler(req, res) {
     }
     return res.status(502).json({ ok: false, error: "TikTok's media server refused this public video." });
   } catch (error) {
-    return res.status(422).json({ ok: false, error: error instanceof Error ? error.message : 'Unable to download this TikTok video.' });
+    const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+    return res.status(timedOut ? 504 : 422).json({ ok: false, error: timedOut ? 'The TikTok media server took too long. Please retry using the original post link.' : error instanceof Error ? error.message : 'Unable to download this TikTok video.' });
   }
 }
