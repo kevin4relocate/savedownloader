@@ -17,6 +17,33 @@ if(form){
   const ZIP32_MAX=0xffffffff;
   let currentData=null;
   let crcTable=null;
+  let pendingFileUrl=null;
+  const isIOS=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)||
+    (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const releasePendingFile=()=>{
+    if(pendingFileUrl){URL.revokeObjectURL(pendingFileUrl);pendingFileUrl=null;}
+  };
+  const showManualSave=(blob,filename,description)=>{
+    releasePendingFile();
+    pendingFileUrl=URL.createObjectURL(blob);
+    progress.replaceChildren();
+    progress.classList.add('show');
+    const message=document.createElement('span');
+    message.textContent=description+' ';
+    const link=document.createElement('a');
+    link.href=pendingFileUrl;
+    link.download=filename;
+    link.className='media-button primary media-save-link';
+    link.textContent='Save file';
+    link.addEventListener('click',()=>{
+      const url=pendingFileUrl;
+      setTimeout(()=>{
+        if(url&&pendingFileUrl===url)releasePendingFile();
+        else if(url)URL.revokeObjectURL(url);
+      },120000);
+    },{once:true});
+    progress.append(message,link);
+  };
 
   const setStatus=(message,type)=>{
     status.textContent=message;
@@ -58,6 +85,7 @@ if(form){
   };
 
   const startDownload=async(sourceUrl,index,mediaType,control)=>{
+    releasePendingFile();
     if(!sourceUrl){setStatus('The original Instagram post URL is missing. Resolve the post again.','error');return;}
     trackEvent('download_instagram',{media_type:mediaType,item_index:index,delivery:'cloudflare'});
     const oldText=control.textContent;
@@ -81,7 +109,14 @@ if(form){
       const statedSize=Number(response.headers.get('content-length')||0);
       if(statedSize>maxBytes){
         await response.body?.cancel();
-        triggerDownload(sourceUrl,index);
+        if(isIOS()){
+          setProgress('Large file: tap Download large file to open Safari Downloads.');
+          const link=document.createElement('a');
+          link.href=downloadUrl(sourceUrl,index);
+          link.className='media-button primary media-save-link';
+          link.textContent='Download large file';
+          progress.append(' ',link);
+        }else triggerDownload(sourceUrl,index);
         setProgress('Large media file: download handed to your browser. Check Downloads for the result.');
         trackEvent('download_browser_handoff',{platform:'instagram',media_type:mediaType});
         return;
@@ -96,7 +131,14 @@ if(form){
         total+=value.byteLength;
         if(total>maxBytes){
           await reader.cancel();
-          triggerDownload(sourceUrl,index);
+          if(isIOS()){
+          setProgress('Large file: tap Download large file to open Safari Downloads.');
+          const link=document.createElement('a');
+          link.href=downloadUrl(sourceUrl,index);
+          link.className='media-button primary media-save-link';
+          link.textContent='Download large file';
+          progress.append(' ',link);
+        }else triggerDownload(sourceUrl,index);
           setProgress('Large media file: download handed to your browser. Check Downloads for the result.');
           trackEvent('download_browser_handoff',{platform:'instagram',media_type:mediaType});
           return;
@@ -105,8 +147,13 @@ if(form){
       }
       if(!total)throw new Error('The Instagram download was empty. Resolve the post again.');
       const ext=extensionFor(type,mediaType);
-      triggerBlobDownload(new Blob(parts,{type}),`instagram-${index+1}.${ext}`);
-      setProgress('Media received and handed to your browser. Check Downloads to confirm it was saved.');
+      const blob=new Blob(parts,{type});
+      const filename=`instagram-${index+1}.${ext}`;
+      if(isIOS())showManualSave(blob,filename,'Your media is ready. Tap Save file to download in Safari.');
+      else{
+        triggerBlobDownload(blob,filename);
+        setProgress('Media handed to your browser. Check Downloads to confirm it was saved.');
+      }
       trackEvent('download_response_ok',{platform:'instagram',media_type:mediaType});
     }catch(error){
       const detail=error?.name==='AbortError'?'The media request took too long. Resolve the original post and retry.':error instanceof Error?error.message:'Instagram download failed.';
@@ -363,6 +410,7 @@ if(form){
   };
 
   const resetResult=()=>{
+    releasePendingFile();
     currentData=null;
     result.classList.remove('show');
     gallery.replaceChildren();
@@ -420,6 +468,7 @@ if(form){
   downloadAllButton.addEventListener('click',async()=>{
     if(!currentData||downloadAllButton.disabled||currentData.media.length<2)return;
     downloadAllButton.disabled=true;
+    releasePendingFile();
     const oldText=downloadAllButton.textContent;
     downloadAllButton.textContent='Preparing ZIP…';
     trackEvent('download_instagram_all',{
@@ -431,9 +480,13 @@ if(form){
     });
     try{
       const zip=await buildZip(currentData);
-      setProgress('ZIP ready. Starting download…');
-      triggerBlobDownload(zip,`instagram-${safeId(currentData.id)}.zip`);
-      setProgress(`ZIP prepared with ${currentData.media.length} items. Check your browser downloads to confirm it was saved.`);
+      const filename=`instagram-${safeId(currentData.id)}.zip`;
+      if(isIOS())showManualSave(zip,filename,`ZIP ready with ${currentData.media.length} items. Tap Save file, then check Safari Downloads or Files.`);
+      else{
+        setProgress('ZIP ready. Starting download…');
+        triggerBlobDownload(zip,filename);
+        setProgress(`ZIP prepared with ${currentData.media.length} items. Check Downloads to confirm it was saved.`);
+      }
       trackEvent('download_response_ok',{platform:'instagram',format:'zip',media_count:currentData.media.length});
     }catch(error){
       const message=error?.name==='TimeoutError'?'An Instagram item timed out. Try downloading available items individually.':error instanceof Error?error.message:'Unable to create the ZIP download.';
