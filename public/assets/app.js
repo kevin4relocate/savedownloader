@@ -40,6 +40,25 @@ if(form){
     return `${base}.${extension}`;
   };
 
+  const isIOS=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)||
+    (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  let pendingMobileUrl=null;
+  const saveLink=(url,filename,message,isBlob=false)=>{
+    if(pendingMobileUrl){URL.revokeObjectURL(pendingMobileUrl);pendingMobileUrl=null;}
+    if(isBlob)pendingMobileUrl=url;
+    setStatus(message,'');
+    const link=document.createElement('a');
+    link.href=url;
+    link.textContent='Save file';
+    link.className='action mobile-save-link';
+    if(filename)link.download=filename;
+    if(isBlob)link.addEventListener('click',()=>{
+      setTimeout(()=>{
+        if(pendingMobileUrl===url){URL.revokeObjectURL(url);pendingMobileUrl=null;}
+      },120000);
+    },{once:true});
+    status.append(' ',link);
+  };
   const startBackendDownload=async(url,control,message,platform)=>{
     const oldText=control.textContent;
     const controller=new AbortController();
@@ -47,21 +66,9 @@ if(form){
     control.disabled=true;
     control.textContent='Preparing download…';
     setStatus(message,'loading');
-    try{
-      const response=await fetch(url,{signal:controller.signal,credentials:'omit'});
-      if(!response.ok){
-        let details='';
-        try{details=(await response.json())?.error||'';}catch{}
-        throw new Error(details||`Download service returned HTTP ${response.status}. Please try the original post link again.`);
-      }
-      const contentType=(response.headers.get('content-type')||'').toLowerCase();
-      if(!/^(video\/|image\/|application\/octet-stream)/.test(contentType)){
-        throw new Error('The media server did not return a supported file. Resolve the original link again.');
-      }
-      const maxBrowserBytes=48*1024*1024;
-      const statedSize=Number(response.headers.get('content-length')||0);
-      const handoff=async()=>{
-        await response.body?.cancel();
+    const handoff=()=>{
+      if(isIOS())saveLink(url,null,'Large file: tap Save file to open Safari Downloads.');
+      else {
         const link=document.createElement('a');
         link.href=url;
         link.hidden=true;
@@ -69,47 +76,54 @@ if(form){
         link.click();
         link.remove();
         setStatus('Large file: download handed to your browser. Check Downloads to confirm the result.','');
-        trackEvent('download_browser_handoff',{platform});
-      };
-      if(statedSize>maxBrowserBytes){await handoff();return;}
+      }
+      trackEvent('download_browser_handoff',{platform});
+    };
+    try{
+      const response=await fetch(url,{signal:controller.signal,credentials:'omit'});
+      if(!response.ok){
+        let detail='';
+        try{detail=(await response.json())?.error||'';}catch{}
+        throw new Error(detail||`Download service returned HTTP ${response.status}. Retry with the original post link.`);
+      }
+      const type=(response.headers.get('content-type')||'').toLowerCase();
+      if(!/^(video\/|application\/octet-stream)/.test(type))throw new Error('The source did not return a supported video file.');
+      const limit=48*1024*1024;
+      if(Number(response.headers.get('content-length')||0)>limit){
+        await response.body?.cancel();
+        handoff();
+        return;
+      }
       const reader=response.body?.getReader();
       if(!reader)throw new Error('The download response has no file data.');
-      const parts=[];
-      let total=0;
+      const chunks=[];
+      let size=0;
       while(true){
         const {value,done}=await reader.read();
         if(done)break;
-        total+=value.byteLength;
-        if(total>maxBrowserBytes){
-          await reader.cancel();
-          const link=document.createElement('a');
-          link.href=url;
-          link.hidden=true;
-          document.body.append(link);
-          link.click();
-          link.remove();
-          setStatus('Large file: download handed to your browser. Check Downloads to confirm the result.','');
-          trackEvent('download_browser_handoff',{platform});
-          return;
-        }
-        parts.push(value);
+        size+=value.byteLength;
+        if(size>limit){await reader.cancel();handoff();return;}
+        chunks.push(value);
       }
-      if(!total)throw new Error('The media server returned an empty file. Try again.');
-      const objectUrl=URL.createObjectURL(new Blob(parts,{type:contentType}));
-      const anchor=document.createElement('a');
-      anchor.href=objectUrl;
-      anchor.download=`${platform}-video.mp4`;
-      anchor.hidden=true;
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);
-      setStatus('File received and handed to your browser. Check Downloads to confirm it was saved.','');
+      if(!size)throw new Error('The source returned an empty video file.');
+      const fileUrl=URL.createObjectURL(new Blob(chunks,{type}));
+      if(isIOS())saveLink(fileUrl,`${platform}-video.mp4`,'Video ready. Tap Save file and check Safari Downloads or Files.',true);
+      else {
+        const link=document.createElement('a');
+        link.href=fileUrl;
+        link.download=`${platform}-video.mp4`;
+        link.hidden=true;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(()=>URL.revokeObjectURL(fileUrl),30000);
+        setStatus('File handed to your browser. Check Downloads to confirm it was saved.','');
+      }
       trackEvent('download_response_ok',{platform,delivery:platform==='tiktok'?'vercel':'cloudflare'});
     }catch(error){
-      const description=error?.name==='AbortError'?'The download took too long. Please retry using the original post link.':error instanceof Error?error.message:'Download failed. Please try again.';
-      setStatus(description,'error');
-      trackEvent('download_failed',{platform,reason:error?.name==='AbortError'?'timeout':'response_error'});
+      const timeoutError=error?.name==='AbortError'||error?.name==='TimeoutError';
+      setStatus(timeoutError?'Download timed out. Please retry the original link.':error instanceof Error?error.message:'Download failed. Try again.','error');
+      trackEvent('download_failed',{platform,reason:timeoutError?'timeout':'response_error'});
     }finally{
       clearTimeout(timeout);
       control.disabled=false;
