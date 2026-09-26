@@ -234,7 +234,8 @@ if(form){
         }
         if(data.platform==='douyin'){
           trackEvent('download_douyin',{media_type:'video',delivery:'direct_with_cloudflare_fallback'});
-          downloadDirect(
+          if(isIOS())downloadDouyinViaBackend(data.sourceUrl,downloadButton);
+          else downloadDirect(
             data.videoUrl,
             safeFilename(mediaTitle,'mp4'),
             downloadButton,
