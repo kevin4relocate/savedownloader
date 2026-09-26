@@ -57,19 +57,67 @@ if(form){
     setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);
   };
 
-  const startDownload=(sourceUrl,index,mediaType,control)=>{
+  const startDownload=async(sourceUrl,index,mediaType,control)=>{
     if(!sourceUrl){setStatus('The original Instagram post URL is missing. Resolve the post again.','error');return;}
     trackEvent('download_instagram',{media_type:mediaType,item_index:index,delivery:'cloudflare'});
     const oldText=control.textContent;
     control.disabled=true;
-    control.textContent='Starting…';
-    setProgress(`Preparing ${mediaType} ${index+1} for download…`);
-    triggerDownload(sourceUrl,index);
-    setTimeout(()=>{
-      setProgress('Download requested. Check your browser downloads; if the file does not appear, try resolving the post again.');
+    control.textContent='Preparing…';
+    setProgress(`Checking ${mediaType} ${index+1}…`);
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),60000);
+    try{
+      const response=await fetch(downloadUrl(sourceUrl,index),{cache:'no-store',signal:controller.signal});
+      if(!response.ok){
+        let detail='';
+        try{detail=(await response.json())?.error||'';}catch{}
+        throw new Error(detail||`Instagram download returned HTTP ${response.status}. Resolve the post again and retry.`);
+      }
+      const type=(response.headers.get('content-type')||'').toLowerCase();
+      if(!/^(image\/|video\/|application\/octet-stream)/.test(type)){
+        throw new Error('Instagram did not return a supported media file.');
+      }
+      const maxBytes=48*1024*1024;
+      const statedSize=Number(response.headers.get('content-length')||0);
+      if(statedSize>maxBytes){
+        await response.body?.cancel();
+        triggerDownload(sourceUrl,index);
+        setProgress('Large media file: download handed to your browser. Check Downloads for the result.');
+        trackEvent('download_browser_handoff',{platform:'instagram',media_type:mediaType});
+        return;
+      }
+      const reader=response.body?.getReader();
+      if(!reader)throw new Error('Instagram returned an empty download response.');
+      const parts=[];
+      let total=0;
+      while(true){
+        const {value,done}=await reader.read();
+        if(done)break;
+        total+=value.byteLength;
+        if(total>maxBytes){
+          await reader.cancel();
+          triggerDownload(sourceUrl,index);
+          setProgress('Large media file: download handed to your browser. Check Downloads for the result.');
+          trackEvent('download_browser_handoff',{platform:'instagram',media_type:mediaType});
+          return;
+        }
+        parts.push(value);
+      }
+      if(!total)throw new Error('The Instagram download was empty. Resolve the post again.');
+      const ext=extensionFor(type,mediaType);
+      triggerBlobDownload(new Blob(parts,{type}),`instagram-${index+1}.${ext}`);
+      setProgress('Media received and handed to your browser. Check Downloads to confirm it was saved.');
+      trackEvent('download_response_ok',{platform:'instagram',media_type:mediaType});
+    }catch(error){
+      const detail=error?.name==='AbortError'?'The media request took too long. Resolve the original post and retry.':error instanceof Error?error.message:'Instagram download failed.';
+      setStatus(detail,'error');
+      setProgress(detail);
+      trackEvent('download_failed',{platform:'instagram',reason:error?.name==='AbortError'?'timeout':'response_error'});
+    }finally{
+      clearTimeout(timeout);
       control.disabled=false;
       control.textContent=oldText;
-    },1200);
+    }
   };
 
   const validInstagramSource=(value)=>{
@@ -250,21 +298,48 @@ if(form){
     const entries=[];
     let offset=0;
     let totalSize=0;
+    const maxZipBytes=96*1024*1024;
+    const maxItemBytes=48*1024*1024;
 
     for(let index=0;index<data.media.length;index+=1){
       setProgress(`Fetching item ${index+1} of ${data.media.length} for ZIP…`);
-      const response=await fetch(downloadUrl(data.sourceUrl,index),{cache:'no-store'});
+      const response=await fetch(downloadUrl(data.sourceUrl,index),{cache:'no-store',signal:AbortSignal.timeout(60000)});
       if(!response.ok){
         let detail='';
         try{detail=(await response.json())?.error||'';}catch{}
         throw new Error(detail||`Could not fetch item ${index+1}.`);
       }
-      const blob=await response.blob();
+      const type=(response.headers.get('content-type')||'').toLowerCase();
+      if(!/^(video\/|image\/|application\/octet-stream)/.test(type)){
+        await response.body?.cancel();
+        throw new Error(`Item ${index+1} did not return a supported media file.`);
+      }
+      const statedSize=Number(response.headers.get('content-length')||0);
+      if(statedSize>maxItemBytes||totalSize+statedSize>maxZipBytes){
+        await response.body?.cancel();
+        throw new Error('This carousel is too large for a browser ZIP. Download items individually.');
+      }
+      const reader=response.body?.getReader();
+      if(!reader)throw new Error(`Item ${index+1} returned no media data.`);
+      const chunks=[];
+      let itemSize=0;
+      while(true){
+        const {value,done}=await reader.read();
+        if(done)break;
+        itemSize+=value.byteLength;
+        if(itemSize>maxItemBytes||totalSize+itemSize>maxZipBytes){
+          await reader.cancel();
+          throw new Error('This carousel exceeds the browser ZIP memory limit. Download items individually.');
+        }
+        chunks.push(value);
+      }
+      if(!itemSize)throw new Error(`Item ${index+1} returned an empty media file.`);
+      const blob=new Blob(chunks,{type});
       if(blob.size>ZIP32_MAX)throw new Error(`Item ${index+1} is too large for a standard ZIP. Download it individually.`);
       totalSize+=blob.size;
       if(totalSize>ZIP32_MAX)throw new Error('This carousel is too large for one ZIP. Download the items individually.');
       const bytes=new Uint8Array(await blob.arrayBuffer());
-      const ext=extensionFor(response.headers.get('content-type'),data.media[index].type);
+      const ext=extensionFor(type,data.media[index].type);
       const filename=`instagram-${safeId(data.id)}-${String(index+1).padStart(2,'0')}.${ext}`;
       const nameBytes=encoder.encode(filename);
       const stamp=dosDateTime();
@@ -359,10 +434,12 @@ if(form){
       setProgress('ZIP ready. Starting download…');
       triggerBlobDownload(zip,`instagram-${safeId(currentData.id)}.zip`);
       setProgress(`ZIP prepared with ${currentData.media.length} items. Check your browser downloads to confirm it was saved.`);
+      trackEvent('download_response_ok',{platform:'instagram',format:'zip',media_count:currentData.media.length});
     }catch(error){
       const message=error instanceof Error?error.message:'Unable to create the ZIP download.';
       setProgress(message);
       setStatus(message,'error');
+      trackEvent('download_failed',{platform:'instagram',format:'zip',reason:error?.name==='TimeoutError'?'timeout':'zip_error'});
     }finally{
       downloadAllButton.disabled=false;
       downloadAllButton.textContent=oldText;
