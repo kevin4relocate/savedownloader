@@ -40,24 +40,82 @@ if(form){
     return `${base}.${extension}`;
   };
 
-  const startBackendDownload=(url,control,message)=>{
+  const startBackendDownload=async(url,control,message,platform)=>{
     const oldText=control.textContent;
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),60000);
     control.disabled=true;
-    control.textContent='Starting download…';
+    control.textContent='Preparing download…';
     setStatus(message,'loading');
-    const anchor=document.createElement('a');
-    anchor.href=url;
-    anchor.style.display='none';
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(()=>{
-      clearStatus();
+    try{
+      const response=await fetch(url,{signal:controller.signal,credentials:'omit'});
+      if(!response.ok){
+        let details='';
+        try{details=(await response.json())?.error||'';}catch{}
+        throw new Error(details||`Download service returned HTTP ${response.status}. Please try the original post link again.`);
+      }
+      const contentType=(response.headers.get('content-type')||'').toLowerCase();
+      if(!/^(video\/|image\/|application\/octet-stream)/.test(contentType)){
+        throw new Error('The media server did not return a supported file. Resolve the original link again.');
+      }
+      const maxBrowserBytes=48*1024*1024;
+      const statedSize=Number(response.headers.get('content-length')||0);
+      const handoff=async()=>{
+        await response.body?.cancel();
+        const link=document.createElement('a');
+        link.href=url;
+        link.hidden=true;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setStatus('Large file: download handed to your browser. Check Downloads to confirm the result.','');
+        trackEvent('download_browser_handoff',{platform});
+      };
+      if(statedSize>maxBrowserBytes){await handoff();return;}
+      const reader=response.body?.getReader();
+      if(!reader)throw new Error('The download response has no file data.');
+      const parts=[];
+      let total=0;
+      while(true){
+        const {value,done}=await reader.read();
+        if(done)break;
+        total+=value.byteLength;
+        if(total>maxBrowserBytes){
+          await reader.cancel();
+          const link=document.createElement('a');
+          link.href=url;
+          link.hidden=true;
+          document.body.append(link);
+          link.click();
+          link.remove();
+          setStatus('Large file: download handed to your browser. Check Downloads to confirm the result.','');
+          trackEvent('download_browser_handoff',{platform});
+          return;
+        }
+        parts.push(value);
+      }
+      if(!total)throw new Error('The media server returned an empty file. Try again.');
+      const objectUrl=URL.createObjectURL(new Blob(parts,{type:contentType}));
+      const anchor=document.createElement('a');
+      anchor.href=objectUrl;
+      anchor.download=`${platform}-video.mp4`;
+      anchor.hidden=true;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);
+      setStatus('File received and handed to your browser. Check Downloads to confirm it was saved.','');
+      trackEvent('download_response_ok',{platform,delivery:platform==='tiktok'?'vercel':'cloudflare'});
+    }catch(error){
+      const description=error?.name==='AbortError'?'The download took too long. Please retry using the original post link.':error instanceof Error?error.message:'Download failed. Please try again.';
+      setStatus(description,'error');
+      trackEvent('download_failed',{platform,reason:error?.name==='AbortError'?'timeout':'response_error'});
+    }finally{
+      clearTimeout(timeout);
       control.disabled=false;
       control.textContent=oldText;
-    },1500);
+    }
   };
-
   const downloadDirect=async(url,filename,control,fallback)=>{
     const oldText=control.textContent;
     control.disabled=true;
@@ -99,7 +157,8 @@ if(form){
     startBackendDownload(
       `${TIKTOK_DOWNLOAD_API}?url=${encodeURIComponent(sourceUrl)}`,
       control,
-      'Preparing the TikTok video for download…'
+      'Preparing the TikTok video for download…',
+      'tiktok'
     );
   };
 
@@ -108,7 +167,8 @@ if(form){
     startBackendDownload(
       `/api/download/douyin?url=${encodeURIComponent(sourceUrl)}`,
       control,
-      'Douyin blocked the direct media request. Retrying through SaveDownloader…'
+      'Douyin blocked the direct media request. Retrying through SaveDownloader…',
+      'douyin'
     );
   };
 
