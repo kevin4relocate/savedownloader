@@ -151,6 +151,16 @@ async function fetchCandidate(url, sourceUrl, range) {
 }
 
 export default async function handler(req, res) {
+  // CORS lets the first-party browser inspect download errors without accepting credentials.
+  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+  const allowed = /^https:\/\/(?:www\.)?savedownloader\.com$/.test(origin) ||
+    origin === 'https://savedownloader.kevin4relocate.workers.dev' ||
+    /^http:\/\/localhost(?::\d+)?$/.test(origin) || /^http:\/\/127\.0\.0\.1(?::\d+)?$/.test(origin);
+  if (allowed) {
+    res.setHeader('access-control-allow-origin', origin);
+    res.setHeader('access-control-expose-headers', 'content-length,content-type,content-disposition');
+    res.setHeader('vary', 'Origin');
+  }
   res.setHeader('cache-control', 'private, no-store');
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('x-robots-tag', 'noindex, nofollow, noarchive');
