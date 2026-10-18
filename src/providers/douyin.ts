@@ -423,6 +423,91 @@ async function fetchItem(awemeId: string, inputUrl: URL, diagnostics: string[]):
   throw new DouyinParseError("This public post could not be parsed.", diagnostics);
 }
 
+// Cloudflare Browser Run's authenticated binding uses an internal RPC;
+// no Cloudflare API token or external proxy is needed.
+export type DouyinBrowser = {
+  quickAction(action: "content", options: {
+    url: string;
+    gotoOptions: { waitUntil: "networkidle2"; timeout: number };
+    rejectResourceTypes: string[];
+  }): Promise<Response>;
+};
+
+export type DouyinResolveOptions = {
+  browser?: DouyinBrowser;
+  browserOnly?: boolean;
+  browserFallback?: boolean;
+  browserRateLimit?: { limit(input: { key: string }): Promise<{ success: boolean }> };
+};
+
+async function fetchRenderedPublicItem(
+  awemeId: string, browser: DouyinBrowser | undefined, diagnostics: string[],
+  rateLimit?: DouyinResolveOptions["browserRateLimit"]
+): Promise<AnyRecord | null> {
+  if (!browser) {
+    diagnostics.push("browser-run:not-configured");
+    return null;
+  }
+
+  // A shared, edge-local limit prevents unlimited browser launches from a
+  // public downloader endpoint. Cloudflare rate limits are approximate.
+  if (!rateLimit) {
+    diagnostics.push("browser-run:rate-limit-unavailable");
+    return null;
+  }
+  try {
+    const { success } = await rateLimit.limit({ key: "douyin-browser-global" });
+    if (!success) {
+      diagnostics.push("browser-run:rate-limited");
+      return null;
+    }
+  } catch {
+    diagnostics.push("browser-run:rate-limit-error");
+    return null;
+  }
+
+  try {
+    // Hard-code the already validated Douyin post ID into the destination.
+    // Never pass user-controlled URLs to a headless browser.
+    const response = await browser.quickAction("content", {
+      url: "https://www.douyin.com/video/" + awemeId,
+      gotoOptions: { waitUntil: "networkidle2", timeout: 15000 },
+      rejectResourceTypes: ["image", "font", "media"]
+    });
+
+    if (!response.ok) {
+      diagnostics.push("browser-run:http-" + response.status);
+      return null;
+    }
+    const data: unknown = await response.json();
+    if (!data || typeof data !== "object" ||
+        (data as AnyRecord).success !== true ||
+        typeof (data as AnyRecord).result !== "string") {
+      diagnostics.push("browser-run:invalid-response");
+      return null;
+    }
+    const html = (data as AnyRecord).result as string;
+    if (!html.trim()) {
+      diagnostics.push("browser-run:empty-body");
+      return null;
+    }
+    if (html.length > 2_000_000) {
+      diagnostics.push("browser-run:oversized-page");
+      return null;
+    }
+    if (/__ac_nonce|__ac_signature|captcha|verify.*human/i.test(html)) {
+      diagnostics.push("browser-run:challenge-page");
+      return null;
+    }
+    const item = parsePublicPageItem(html, awemeId);
+    if (!item) diagnostics.push("browser-run:no-matching-public-media");
+    return item;
+  } catch (error) {
+    diagnosticFailure(diagnostics, "browser-run", error);
+    return null;
+  }
+}
+
 function formatItem(item: AnyRecord, sourceUrl: string, awemeId: string) {
   const images = Array.isArray(item?.images)
     ? item.images.map((image: AnyRecord) => firstUrl(image)).filter(Boolean)
@@ -447,9 +532,25 @@ function formatItem(item: AnyRecord, sourceUrl: string, awemeId: string) {
   };
 }
 
-export async function resolveDouyin(inputUrl: URL) {
+export async function resolveDouyin(inputUrl: URL, options: DouyinResolveOptions = {}) {
   const diagnostics: string[] = [];
   const awemeId = await resolveAwemeId(inputUrl, diagnostics);
-  const item = await fetchItem(awemeId, inputUrl, diagnostics);
-  return formatItem(item, inputUrl.toString(), awemeId);
+
+  // Browser-only mode is reserved for an authenticated canary test. It avoids
+  // spending time on already known-blocked anonymous APIs.
+  if (options.browserOnly) {
+    const rendered = await fetchRenderedPublicItem(awemeId, options.browser, diagnostics, options.browserRateLimit);
+    if (rendered) return formatItem(rendered, inputUrl.toString(), awemeId);
+    throw new DouyinParseError("The public Douyin post could not be read by Browser Run.", diagnostics);
+  }
+
+  try {
+    const item = await fetchItem(awemeId, inputUrl, diagnostics);
+    return formatItem(item, inputUrl.toString(), awemeId);
+  } catch (error) {
+    if (!(error instanceof DouyinParseError) || !options.browserFallback) throw error;
+    const rendered = await fetchRenderedPublicItem(awemeId, options.browser, diagnostics, options.browserRateLimit);
+    if (rendered) return formatItem(rendered, inputUrl.toString(), awemeId);
+    throw new DouyinParseError("This public post could not be parsed.", diagnostics);
+  }
 }
