@@ -495,13 +495,16 @@ async function fetchRenderedPublicItem(
       diagnostics.push("browser-run:oversized-page");
       return null;
     }
+    // Confirm matching public metadata before classifying generic security text:
+    // some legitimate app shells mention "captcha" in bundled scripts.
+    const item = parsePublicPageItem(html, awemeId);
+    if (item) return item;
     if (/__ac_nonce|__ac_signature|captcha|verify.*human/i.test(html)) {
       diagnostics.push("browser-run:challenge-page");
       return null;
     }
-    const item = parsePublicPageItem(html, awemeId);
-    if (!item) diagnostics.push("browser-run:no-matching-public-media");
-    return item;
+    diagnostics.push("browser-run:no-matching-public-media");
+    return null;
   } catch (error) {
     diagnosticFailure(diagnostics, "browser-run", error);
     return null;
