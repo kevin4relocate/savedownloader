@@ -4,7 +4,10 @@ if(form){
   const button=form.querySelector('button[type="submit"]');
   const status=document.querySelector('[data-status]');
   const result=document.querySelector('[data-result]');
-  const TIKTOK_DOWNLOAD_API='https://savedownloader-tiktok-api.vercel.app/api/download';
+  const VERCEL_BASE='https://savedownloader-tiktok-api.vercel.app';
+  const TIKTOK_DOWNLOAD_API=VERCEL_BASE+'/api/download';
+  const DOUYIN_RESOLVE_API=VERCEL_BASE+'/api/douyin-resolve';
+  const DOUYIN_DOWNLOAD_API=VERCEL_BASE+'/api/douyin-download';
 
   const setStatus=(message,type)=>{
     status.textContent=message;
@@ -119,7 +122,7 @@ if(form){
         setTimeout(()=>URL.revokeObjectURL(fileUrl),30000);
         setStatus('File handed to your browser. Check Downloads to confirm it was saved.','');
       }
-      trackEvent('download_response_ok',{platform,delivery:platform==='tiktok'?'vercel':'cloudflare'});
+      trackEvent('download_response_ok',{platform,delivery:platform==='tiktok'||platform==='douyin'?'vercel':'cloudflare'});
     }catch(error){
       const timeoutError=error?.name==='AbortError'||error?.name==='TimeoutError';
       setStatus(timeoutError?'Download timed out. Please retry the original link.':error instanceof Error?error.message:'Download failed. Try again.','error');
@@ -201,9 +204,9 @@ if(form){
   const downloadDouyinViaBackend=(sourceUrl,control)=>{
     if(!sourceUrl){setStatus('The original Douyin post URL is missing. Resolve the post again.','error');return;}
     startBackendDownload(
-      `/api/download/douyin?tryBrowser=1&url=${encodeURIComponent(sourceUrl)}`,
+      `${DOUYIN_DOWNLOAD_API}?url=${encodeURIComponent(sourceUrl)}`,
       control,
-      'Douyin blocked the direct media request. Retrying through SaveDownloader…',
+      'The direct Douyin video request failed. Trying the Vercel media backend…',
       'douyin'
     );
   };
@@ -233,7 +236,7 @@ if(form){
           return;
         }
         if(data.platform==='douyin'){
-          trackEvent('download_douyin',{media_type:'video',delivery:'direct_with_cloudflare_fallback'});
+          trackEvent('download_douyin',{media_type:'video',delivery:'direct_with_vercel_fallback'});
           if(isIOS())downloadDouyinViaBackend(data.sourceUrl,downloadButton);
           else downloadDirect(
             data.videoUrl,
@@ -263,17 +266,13 @@ if(form){
 
   const explainDouyinError=(payload)=>{
     const diagnostics=Array.isArray(payload?.diagnostics)?payload.diagnostics:[];
-    if(diagnostics.includes('browser-run:rate-limited'))return 'Too many Douyin browser checks are running right now. Please wait a minute and try again.';
-    if(diagnostics.includes('browser-run:rate-limit-unavailable'))return 'The browser check is temporarily unavailable on Cloudflare. Please try again later.';
-    if(diagnostics.includes('browser-run:not-configured'))return 'The Douyin browser check is not configured on this server.';
-    if(diagnostics.includes('browser-run:challenge-page')||
-      (diagnostics.some(item=>item.endsWith(':challenge-page'))&&diagnostics.some(item=>item.includes(':http-403'))))
-      return 'Douyin is requiring verification from our server. This post cannot be downloaded through SaveDownloader right now.';
-    if(diagnostics.includes('browser-run:no-matching-public-media'))
-      return 'The public post page loaded, but Douyin did not expose downloadable video data. Try another public post.';
-    if(diagnostics.some(item=>item.startsWith('browser-run:')&&item.includes('error')))
-      return 'The Cloudflare browser could not read this Douyin post. Please retry later.';
-    return typeof payload?.error==='string'?payload.error:'Unable to check this Douyin post.';
+    if(diagnostics.some(item=>item.includes(':http-403')||item.endsWith(':challenge-page')))
+      return 'Douyin is requiring verification from the Vercel server as well. This video cannot be downloaded through SaveDownloader right now.';
+    if(diagnostics.some(item=>item.includes(':empty-body')))
+      return 'Douyin returned empty video information to Vercel. Please try another public video.';
+    if(diagnostics.some(item=>item.endsWith(':timeout')))
+      return 'Douyin did not respond to the Vercel server in time. Please try again later.';
+    return typeof payload?.error==='string'?payload.error:'Unable to check this Douyin post through Vercel.';
   };
 
   form.addEventListener('submit',async(event)=>{
@@ -284,10 +283,10 @@ if(form){
     button.disabled=true;
     result.classList.remove('show');
     setStatus(requestedPlatform==='douyin'
-      ?'Checking the Douyin post… If public metadata is blocked, Cloudflare will try a browser. This can take up to a minute.'
+      ?'Checking the public Douyin post through the Vercel server…'
       :'Checking the public media link…','loading');
     try{
-      const endpoint=requestedPlatform==='douyin'?'/api/resolve?tryBrowser=1&diagnose=1':'/api/resolve';
+      const endpoint=requestedPlatform==='douyin'?DOUYIN_RESOLVE_API:'/api/resolve';
       const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url}),signal:AbortSignal.timeout(requestedPlatform==='douyin'?90000:35000)});
       const payload=await response.json().catch(()=>({ok:false,error:`Resolver returned an unexpected response (HTTP ${response.status}). Please retry.` }));
       if(!response.ok||!payload.ok)throw new Error(requestedPlatform==='douyin'
@@ -300,7 +299,7 @@ if(form){
       clearStatus();
       render(payload.data);
       if(payload.data?.platform==='douyin'){
-        setStatus('Public media found. Click Download video to check whether Douyin allows the actual file transfer.','');
+        setStatus('Public media found on Vercel. Click Download video to check the actual file transfer.','');
       }
     }catch(error){
       trackEvent('resolve_failed',{platform:requestedPlatform});

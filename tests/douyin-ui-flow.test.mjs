@@ -141,11 +141,12 @@ test('secret-only browser canary is still protected by its token', async () => {
   });
 });
 
-test('existing website shows browser-related status and only requests fallback for Douyin', () => {
+test('existing website routes Douyin to Vercel and keeps non-Douyin on Cloudflare', () => {
   const app = text('public/assets/app.js');
-  assert.match(app, /requestedPlatform==='douyin'\?'\/api\/resolve\?tryBrowser=1&diagnose=1':'\/api\/resolve'/);
-  assert.match(app, /download\/douyin\?tryBrowser=1&url=/);
+  assert.match(app, /DOUYIN_RESOLVE_API=VERCEL_BASE\+'\/api\/douyin-resolve'/);
+  assert.match(app, /DOUYIN_DOWNLOAD_API=VERCEL_BASE\+'\/api\/douyin-download'/);
+  assert.match(app, /requestedPlatform==='douyin'\?DOUYIN_RESOLVE_API:'\/api\/resolve'/);
   assert.match(app, /explainDouyinError/);
-  assert.match(app, /Browser Run|Cloudflare will try a browser/);
+  assert.match(app, /through the Vercel server/);
   assert.match(app, /AbortSignal\.timeout\(requestedPlatform==='douyin'\?90000:35000\)/);
 });
