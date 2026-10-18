@@ -68,7 +68,7 @@ test('Vercel accepts redirecting public Douyin short links but never follows ext
   },async()=>{
     const result=await resolvePublicDouyin('https://v.douyin.com/test123');
     assert.equal(result.id,id);
-    assert.equal(touched.length,2);
+    assert.equal(touched.length,3); // short URL, canonical URL, then metadata API
   });
   let hits=0;
   await assert.rejects(withFetch(async()=>{
@@ -107,7 +107,7 @@ test('Vercel reports upstream 403 and challenge pages without exposing HTML or p
   assert.equal(response.payload.ok,false);
   assert.ok(response.payload.diagnostics.includes('ies-iteminfo:empty-body'));
   assert.ok(response.payload.diagnostics.includes('desktop-detail:http-403'));
-  assert.ok(response.payload.diagnostics.includes('douyin-page:challenge-page'));
+  assert.ok(response.payload.diagnostics.includes('original-page:challenge-page'));
   assert.ok(!JSON.stringify(response.payload.diagnostics).includes(id));
   assert.ok(!JSON.stringify(response.payload.diagnostics).includes('http://'));
 });
