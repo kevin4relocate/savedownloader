@@ -23,7 +23,7 @@ function extractAwemeId(value: string): string | null {
     /\/note\/(\d{8,})/,
     /\/share\/video\/(\d{8,})/,
     /\/share\/note\/(\d{8,})/,
-    /[?&](?:modal_id|aweme_id)=(\d{8,})/
+    /[?&](?:modal_id|aweme_id|item_id)=(\d{8,})/
   ]) {
     const match = value.match(pattern);
     if (match?.[1]) return match[1];
@@ -47,20 +47,52 @@ async function resolveAwemeId(inputUrl: URL): Promise<string> {
 
   const finalUrl = assertPublicDouyinUrl(response.url);
   const id = extractAwemeId(finalUrl.toString());
-  if (!id) throw new Error("Could not find a Douyin post ID in this link.");
-  return id;
+  if (id) return id;
+
+  // Some short links now land on a generic page while retaining the post ID
+  // only in the returned public HTML. Never use an ID from a different host.
+  if (response.ok) {
+    const html = await response.text();
+    const fromHtml =
+      html.match(/(?:aweme_id|awemeId|item_id|modal_id)["'\\s:=]+["']?(\\d{8,})/)?.[1] ??
+      html.match(/\\/(?:video|note)\\/(\\d{8,})/)?.[1];
+    if (fromHtml) return fromHtml;
+  }
+  throw new Error("Could not find a Douyin post ID in this link.");
 }
 
 function firstUrl(value: any): string | null {
-  const list = value?.url_list ?? value?.urlList;
-  return Array.isArray(list) && typeof list[0] === "string" ? list[0] : null;
+  if (typeof value === "string") return /^https?:\\/\\//i.test(value) ? value : null;
+  const urls = value?.url_list ?? value?.urlList ?? value?.urls;
+  if (Array.isArray(urls)) {
+    for (const url of urls) {
+      if (typeof url === "string" && /^https?:\\/\\//i.test(url)) return url;
+    }
+  }
+  return null;
+}
+
+function getVideoUrl(item: AnyRecord): string | null {
+  const video = item?.video ?? item?.videoInfo;
+  if (!video || typeof video !== "object") return null;
+
+  const candidates = [
+    video.play_addr, video.playAddr, video.play_addr_h264, video.playAddrH264,
+    video.play_addr_lowbr, video.playAddrLowbr, video.download_addr, video.downloadAddr,
+    ...(Array.isArray(video.bit_rate) ? video.bit_rate.flatMap((rate: AnyRecord) => [
+      rate?.play_addr, rate?.playAddr
+    ]) : [])
+  ];
+  for (const candidate of candidates) {
+    const url = firstUrl(candidate);
+    if (url) return url;
+  }
+  return null;
 }
 
 function hasPublicMedia(item: AnyRecord): boolean {
   return Boolean(
-    firstUrl(item?.video?.play_addr) ||
-    firstUrl(item?.video?.play_addr_h264) ||
-    firstUrl(item?.video?.download_addr) ||
+    getVideoUrl(item) ||
     (Array.isArray(item?.images) && item.images.some((image: AnyRecord) => firstUrl(image)))
   );
 }
@@ -140,22 +172,33 @@ function parseJson(raw: string, allowPercentDecode = false): AnyRecord | null {
 
 function extractHydrationPayloads(html: string): AnyRecord[] {
   const payloads: AnyRecord[] = [];
+  // Script attributes can arrive in any order; JSON payloads may also use
+  // framework-specific script IDs instead of RENDER_DATA.
+  const scripts = /<script\\b([^>]*)>([\\s\\S]*?)<\\/script\\s*>/gi;
+  let script: RegExpExecArray | null;
 
-  for (const id of ["RENDER_DATA", "__UNIVERSAL_DATA_FOR_REHYDRATION__"]) {
-    const match = html.match(new RegExp(`<script[^>]+id=["']${id}["'][^>]*>([\\s\\S]*?)<\\/script>`, "i"));
-    if (!match?.[1]) continue;
-    const parsed = parseJson(match[1], id === "RENDER_DATA");
-    if (parsed) payloads.push(parsed);
+  while ((script = scripts.exec(html)) !== null) {
+    const attrs = script[1];
+    const body = script[2].trim();
+    if (!body) continue;
+
+    const id = attrs.match(/\\bid\\s*=\\s*["']([^"']+)["']/i)?.[1] ?? "";
+    const type = attrs.match(/\\btype\\s*=\\s*["']([^"']+)["']/i)?.[1]?.toLowerCase() ?? "";
+    if (["RENDER_DATA", "__UNIVERSAL_DATA_FOR_REHYDRATION__", "__NEXT_DATA__"].includes(id) ||
+        type === "application/json") {
+      const parsed = parseJson(body, id === "RENDER_DATA");
+      if (parsed) payloads.push(parsed);
+    }
+
+    // Douyin often hydrates its public share page with inline assignments.
+    for (const variable of ["_ROUTER_DATA", "_SSR_DATA", "_SSR_HYDRATED_DATA"]) {
+      const marker = new RegExp("window\\\\." + variable + "\\\\s*=\\\\s*", "i");
+      const match = marker.exec(body);
+      if (!match) continue;
+      const parsed = parseJson(body.slice(match.index + match[0].length));
+      if (parsed) payloads.push(parsed);
+    }
   }
-
-  for (const variable of ["_ROUTER_DATA", "_SSR_DATA", "_SSR_HYDRATED_DATA"]) {
-    const escaped = variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = html.match(new RegExp(`window\\.${escaped}\\s*=\\s*([\\s\\S]*?)<\\/script>`, "i"));
-    if (!match?.[1]) continue;
-    const parsed = parseJson(match[1]);
-    if (parsed) payloads.push(parsed);
-  }
-
   return payloads;
 }
 
@@ -182,8 +225,8 @@ async function fetchPublicItemInfo(awemeId: string): Promise<AnyRecord | null> {
 
     if (!response.ok) return null;
     const data = await response.json() as AnyRecord;
-    const item = data?.item_list?.[0];
-    if (item && itemId(item) === awemeId && hasPublicMedia(item)) return item;
+    const item = findTargetItem(data, awemeId);
+    if (item) return item;
     return null;
   } catch {
     return null;
@@ -223,6 +266,32 @@ async function getAnonymousTtwid(): Promise<string> {
   return "";
 }
 
+// A separate public share API is still used by some mobile pages and avoids
+// relying entirely on the legacy v2 endpoint or the desktop signed API.
+async function fetchPublicIesDetail(awemeId: string): Promise<AnyRecord | null> {
+  try {
+    const apiUrl = new URL("https://www.iesdouyin.com/aweme/v1/web/aweme/detail/");
+    apiUrl.searchParams.set("aweme_id", awemeId);
+    apiUrl.searchParams.set("aid", "1128");
+    apiUrl.searchParams.set("device_platform", "android");
+
+    const response = await fetch(apiUrl, {
+      signal: AbortSignal.timeout(12000),
+      redirect: "follow",
+      headers: {
+        "user-agent": MOBILE_UA,
+        referer: "https://www.iesdouyin.com/",
+        accept: "application/json, text/plain, */*",
+        "accept-language": "zh-CN,zh;q=0.9"
+      }
+    });
+    if (!response.ok) return null;
+    return findTargetItem(await response.json() as AnyRecord, awemeId);
+  } catch {
+    return null;
+  }
+}
+
 async function fetchPublicWebDetail(awemeId: string): Promise<AnyRecord | null> {
   try {
     const ttwid = await getAnonymousTtwid();
@@ -234,6 +303,8 @@ async function fetchPublicWebDetail(awemeId: string): Promise<AnyRecord | null> 
     apiUrl.searchParams.set("pc_client_type", "1");
     apiUrl.searchParams.set("version_code", "190500");
     apiUrl.searchParams.set("version_name", "19.5.0");
+    apiUrl.searchParams.set("request_source", "600");
+    apiUrl.searchParams.set("origin_type", "quick_player");
 
     const headers: Record<string, string> = {
       "user-agent": DESKTOP_UA,
@@ -247,8 +318,8 @@ async function fetchPublicWebDetail(awemeId: string): Promise<AnyRecord | null> 
     if (!response.ok) return null;
 
     const data = await response.json() as AnyRecord;
-    const item = data?.aweme_detail;
-    if (item && itemId(item) === awemeId && hasPublicMedia(item)) return item;
+    const item = findTargetItem(data, awemeId);
+    if (item) return item;
     return null;
   } catch {
     return null;
@@ -277,6 +348,9 @@ async function fetchHtml(url: string, userAgent: string, referer = "https://www.
 async function fetchItem(awemeId: string, inputUrl: URL): Promise<AnyRecord> {
   const publicApiItem = await fetchPublicItemInfo(awemeId);
   if (publicApiItem) return publicApiItem;
+
+  const iesDetailItem = await fetchPublicIesDetail(awemeId);
+  if (iesDetailItem) return iesDetailItem;
 
   const webDetailItem = await fetchPublicWebDetail(awemeId);
   if (webDetailItem) return webDetailItem;
@@ -312,10 +386,7 @@ function formatItem(item: AnyRecord, sourceUrl: string, awemeId: string) {
     ? item.images.map((image: AnyRecord) => firstUrl(image)).filter(Boolean)
     : [];
 
-  const videoUrl =
-    firstUrl(item?.video?.play_addr) ||
-    firstUrl(item?.video?.play_addr_h264) ||
-    firstUrl(item?.video?.download_addr);
+  const videoUrl = getVideoUrl(item);
 
   const cover = firstUrl(item?.video?.cover) || firstUrl(item?.video?.origin_cover);
   if (!videoUrl && images.length === 0) throw new Error("No downloadable public media was found.");
