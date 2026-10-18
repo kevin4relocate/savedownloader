@@ -144,6 +144,16 @@ test('Browser-only canary parses a public matching post and uses only a fixed ca
   assert.deepEqual(counters, ['douyin-browser-global']);
 });
 
+test('Browser Run accepts matching post metadata even if page shell mentions captcha', async () => {
+  const rendered = '<div>captcha is a name in the frontend bundle</div>' + renderedHtml;
+  const result = await resolveDouyin(new URL('https://www.douyin.com/video/' + id), {
+    browserOnly: true,
+    browser: browserWithHtml(rendered),
+    browserRateLimit: { async limit() { return { success: true }; } }
+  });
+  assert.equal(result.videoUrl, mediaUrl);
+});
+
 test('Browser-only canary reports a challenge without treating its HTML as media', async () => {
   await assert.rejects(
     resolveDouyin(new URL('https://www.douyin.com/video/' + id), {
