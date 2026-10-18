@@ -49,24 +49,23 @@ async function resolveAwemeId(inputUrl: URL): Promise<string> {
   const id = extractAwemeId(finalUrl.toString());
   if (id) return id;
 
-  // Some short links now land on a generic page while retaining the post ID
-  // only in the returned public HTML. Never use an ID from a different host.
+  // Only trust an ID found on a validated Douyin-hosted public page.
   if (response.ok) {
     const html = await response.text();
     const fromHtml =
-      html.match(/(?:aweme_id|awemeId|item_id|modal_id)["'\\s:=]+["']?(\\d{8,})/)?.[1] ??
-      html.match(/\\/(?:video|note)\\/(\\d{8,})/)?.[1];
+      html.match(/(?:aweme_id|awemeId|item_id|modal_id)["'\s:=]+["']?(\d{8,})/)?.[1] ??
+      html.match(/\/(?:video|note)\/(\d{8,})/)?.[1];
     if (fromHtml) return fromHtml;
   }
   throw new Error("Could not find a Douyin post ID in this link.");
 }
 
 function firstUrl(value: any): string | null {
-  if (typeof value === "string") return /^https?:\\/\\//i.test(value) ? value : null;
+  if (typeof value === "string") return /^https?:\/\//i.test(value) ? value : null;
   const urls = value?.url_list ?? value?.urlList ?? value?.urls;
   if (Array.isArray(urls)) {
     for (const url of urls) {
-      if (typeof url === "string" && /^https?:\\/\\//i.test(url)) return url;
+      if (typeof url === "string" && /^https?:\/\//i.test(url)) return url;
     }
   }
   return null;
@@ -172,9 +171,8 @@ function parseJson(raw: string, allowPercentDecode = false): AnyRecord | null {
 
 function extractHydrationPayloads(html: string): AnyRecord[] {
   const payloads: AnyRecord[] = [];
-  // Script attributes can arrive in any order; JSON payloads may also use
-  // framework-specific script IDs instead of RENDER_DATA.
-  const scripts = /<script\\b([^>]*)>([\\s\\S]*?)<\\/script\\s*>/gi;
+  // Script attributes can arrive in any order.
+  const scripts = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
   let script: RegExpExecArray | null;
 
   while ((script = scripts.exec(html)) !== null) {
@@ -182,17 +180,16 @@ function extractHydrationPayloads(html: string): AnyRecord[] {
     const body = script[2].trim();
     if (!body) continue;
 
-    const id = attrs.match(/\\bid\\s*=\\s*["']([^"']+)["']/i)?.[1] ?? "";
-    const type = attrs.match(/\\btype\\s*=\\s*["']([^"']+)["']/i)?.[1]?.toLowerCase() ?? "";
+    const id = attrs.match(/\bid\s*=\s*["']([^"']+)["']/i)?.[1] ?? "";
+    const type = attrs.match(/\btype\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase() ?? "";
     if (["RENDER_DATA", "__UNIVERSAL_DATA_FOR_REHYDRATION__", "__NEXT_DATA__"].includes(id) ||
         type === "application/json") {
       const parsed = parseJson(body, id === "RENDER_DATA");
       if (parsed) payloads.push(parsed);
     }
 
-    // Douyin often hydrates its public share page with inline assignments.
     for (const variable of ["_ROUTER_DATA", "_SSR_DATA", "_SSR_HYDRATED_DATA"]) {
-      const marker = new RegExp("window\\\\." + variable + "\\\\s*=\\\\s*", "i");
+      const marker = new RegExp("window\\." + variable + "\\s*=\\s*", "i");
       const match = marker.exec(body);
       if (!match) continue;
       const parsed = parseJson(body.slice(match.index + match[0].length));
