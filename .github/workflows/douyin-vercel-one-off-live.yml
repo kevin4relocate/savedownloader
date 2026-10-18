@@ -34,6 +34,7 @@ jobs:
             });
             console.log('VERCEL DOUYIN RESULT:', JSON.stringify({
               http:result.status,
+              vercelRegion:result.headers.get('x-savedownloader-region') || null,
               responseKind:result.json ? 'json' : 'non-json',
               ok:result.json?.ok === true,
               error:typeof result.json?.error === 'string' ? result.json.error : null,
