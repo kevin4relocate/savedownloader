@@ -17,6 +17,7 @@ export function setDouyinCors(req, res) {
   res.setHeader('cache-control', 'private, no-store');
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('x-robots-tag', 'noindex, nofollow, noarchive');
+  res.setHeader('x-savedownloader-region', process.env.VERCEL_REGION || 'unknown');
   res.setHeader('x-savedownloader-resolver', 'vercel-douyin');
 }
 
