@@ -112,3 +112,110 @@ test('Douyin diagnostics distinguish valid but unrelated media', async () => {
     return true;
   });
 });
+
+
+function browserWithHtml(html, calls = []) {
+  return {
+    async quickAction(action, options) {
+      calls.push({ action, options });
+      return asJson({ success: true, result: html });
+    }
+  };
+}
+
+const renderedHtml = '<script data-x="y" type="application/json" id="__NEXT_DATA__">' +
+  JSON.stringify({ props: { pageProps: { aweme_detail: item } } }) + '</script>';
+
+test('Browser-only canary parses a public matching post and uses only a fixed canonical Douyin URL', async () => {
+  const calls = [];
+  const counters = [];
+  const result = await withMockFetch(() => {
+    throw new Error('Browser-only mode must not hit ordinary metadata APIs for full post URLs');
+  }, () => resolveDouyin(new URL('https://www.douyin.com/video/' + id), {
+    browser: browserWithHtml(renderedHtml, calls),
+    browserOnly: true,
+    browserRateLimit: { async limit(input) { counters.push(input.key); return { success: true }; } }
+  }));
+  assert.equal(result.videoUrl, mediaUrl);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].action, 'content');
+  assert.equal(calls[0].options.url, 'https://www.douyin.com/video/' + id);
+  assert.equal(calls[0].options.gotoOptions.timeout, 15000);
+  assert.deepEqual(counters, ['douyin-browser-global']);
+});
+
+test('Browser-only canary reports a challenge without treating its HTML as media', async () => {
+  await assert.rejects(
+    resolveDouyin(new URL('https://www.douyin.com/video/' + id), {
+      browserOnly: true,
+      browser: browserWithHtml('<html><h1>__ac_nonce</h1></html>'),
+      browserRateLimit: { async limit() { return { success: true }; } }
+    }),
+    (error) => {
+      assert.ok(error instanceof DouyinParseError);
+      assert.ok(error.diagnostics.includes('browser-run:challenge-page'));
+      assert.ok(!JSON.stringify(error.diagnostics).includes(id));
+      return true;
+    }
+  );
+});
+
+test('Browser-only canary handles missing binding and global rate limit without a browser launch', async () => {
+  await assert.rejects(
+    resolveDouyin(new URL('https://www.douyin.com/video/' + id), { browserOnly: true }),
+    (error) => {
+      assert.ok(error.diagnostics.includes('browser-run:not-configured'));
+      return true;
+    }
+  );
+  let launched = 0;
+  await assert.rejects(
+    resolveDouyin(new URL('https://www.douyin.com/video/' + id), {
+      browserOnly: true,
+      browser: { async quickAction() { launched += 1; throw new Error('unexpected'); } },
+      browserRateLimit: { async limit() { return { success: false }; } }
+    }),
+    (error) => {
+      assert.ok(error.diagnostics.includes('browser-run:rate-limited'));
+      return true;
+    }
+  );
+  assert.equal(launched, 0);
+});
+
+test('Douyin normal parser never launches Browser Run unless fallback explicitly enabled', async () => {
+  let launched = 0;
+  const browser = { async quickAction() { launched += 1; return asJson({ success: true, result: renderedHtml }); } };
+  const failure = async (input) => {
+    const url = String(input);
+    if (url.includes('ttwid.bytedance.com')) return asJson({});
+    if (url.includes('/aweme/')) return asJson({});
+    return asHtml('<html>No media</html>');
+  };
+
+  await assert.rejects(withMockFetch(failure, () => resolveDouyin(
+    new URL('https://www.douyin.com/video/' + id),
+    { browser, browserRateLimit: { async limit() { return { success: true }; } } }
+  )), /could not be parsed/i);
+  assert.equal(launched, 0);
+
+  const media = await withMockFetch(failure, () => resolveDouyin(
+    new URL('https://www.douyin.com/video/' + id),
+    { browser, browserFallback: true, browserRateLimit: { async limit() { return { success: true }; } } }
+  ));
+  assert.equal(media.videoUrl, mediaUrl);
+  assert.equal(launched, 1);
+});
+
+test('Cloudflare Browser Run is protected and opt-in at Worker entrypoint', () => {
+  const worker = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+  const wrangler = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
+  assert.match(worker, /Authorized browser test token required/);
+  assert.match(worker, /x-douyin-browser-token/);
+  assert.match(worker, /DOUYIN_BROWSER_FALLBACK === "1"/);
+  const config = JSON.parse(wrangler);
+  assert.equal(config.browser.binding, 'BROWSER');
+  assert.equal(config.ratelimits[0].name, 'DOUYIN_BROWSER_RATE_LIMIT');
+  assert.ok(config.ratelimits[0].simple.limit <= 2);
+  assert.equal(config.ratelimits[0].simple.period, 60);
+});
