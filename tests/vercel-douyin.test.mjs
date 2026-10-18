@@ -178,3 +178,12 @@ test('Vercel does not permit arbitrary web origins in CORS',async()=>{
   assert.equal(response.statusCode,200);
   assert.equal(response.getHeader('access-control-allow-origin'),undefined);
 });
+
+test('Vercel uses an Asia region for Douyin without relocating TikTok',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const config=JSON.parse(readFileSync(new URL('../vercel-tiktok-api/vercel.json',import.meta.url),'utf8'));
+  assert.deepEqual(config.regions,['iad1']);
+  assert.deepEqual(config.functions['api/douyin-resolve.js'].regions,['hkg1']);
+  assert.deepEqual(config.functions['api/douyin-download.js'].regions,['hkg1']);
+  assert.ok(config.functions['api/douyin-resolve.js'].maxDuration<=60);
+});
