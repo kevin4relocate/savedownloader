@@ -187,3 +187,53 @@ test('Vercel uses an Asia region for Douyin without relocating TikTok',async()=>
   assert.deepEqual(config.functions['api/douyin-download.js'].regions,['hkg1']);
   assert.ok(config.functions['api/douyin-resolve.js'].maxDuration<=60);
 });
+
+
+test('Vercel can recover a matching public post from Xigua share HTML when Douyin APIs fail',async()=>{
+  let ixiguaSeen=0;
+  const html='<script type="application/json" id="__NEXT_DATA__">'+
+    JSON.stringify({data:{aweme_detail:item}})+'</script>';
+  const result=await withFetch(async input=>{
+    const url=String(input);
+    if(url.startsWith('https://m.ixigua.com/douyin/share/video/')) {
+      ixiguaSeen++;
+      return new Response(html,{status:200});
+    }
+    if(url.includes('/aweme/v1/')||url.includes('/web/api/v2/')) return new Response('',{status:403});
+    return new Response('<html>__ac_nonce</html>',{status:200});
+  },()=>resolvePublicDouyin(post));
+  assert.equal(result.id,id);
+  assert.equal(result.videoUrl,file);
+  assert.equal(ixiguaSeen,1);
+});
+
+test('Vercel does not follow Xigua share redirects to unauthorized hosts',async()=>{
+  const visited=[];
+  await assert.rejects(withFetch(async input=>{
+    const url=String(input);
+    visited.push(url);
+    if(url.startsWith('https://m.ixigua.com/douyin/share/video/')) {
+      return new Response(null,{status:302,headers:{location:'https://internal.example/private'}});
+    }
+    if(url.includes('/aweme/v1/')||url.includes('/web/api/v2/')) return new Response('',{status:403});
+    return new Response('<html>__ac_nonce</html>',{status:200});
+  },()=>resolvePublicDouyin(post)),error=>{
+    assert.ok(error instanceof DouyinUnavailable);
+    assert.ok(error.diagnostics.includes('ixigua-share:network-error'));
+    return true;
+  });
+  assert.ok(visited.some(url=>url.startsWith('https://m.ixigua.com/douyin/share/video/')));
+  assert.ok(!visited.some(url=>url.startsWith('https://internal.example/')));
+});
+
+test('Vercel can recover public Jingxuan hydration by modal_id',async()=>{
+  const html='<script type="application/json">'+
+    JSON.stringify({aweme_detail:item})+'</script>';
+  const result=await withFetch(async input=>{
+    const url=String(input);
+    if(url.includes('www.douyin.com/jingxuan?modal_id='))return new Response(html,{status:200});
+    if(url.includes('/aweme/v1/')||url.includes('/web/api/v2/'))return new Response('',{status:403});
+    return new Response('<html>__ac_nonce</html>',{status:200});
+  },()=>resolvePublicDouyin(post));
+  assert.equal(result.videoUrl,file);
+});
