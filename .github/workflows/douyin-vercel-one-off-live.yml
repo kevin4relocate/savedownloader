@@ -1,0 +1,53 @@
+name: Douyin Vercel One-Off Live Verification
+on:
+  push:
+    branches:
+      - test/douyin-vercel-live-probe-20261019
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Probe new Vercel Douyin resolver and deployed frontend once
+        run: |
+          node --input-type=module <<'NODE'
+          const base = 'https://savedownloader-tiktok-api.vercel.app';
+          const publicPost = 'https://www.douyin.com/video/7668944508008610298';
+          const limited = async (url, options = {}) => {
+            const response = await fetch(url, {...options, signal: AbortSignal.timeout(105000)});
+            const raw = await response.text();
+            let json = null;
+            try { json = JSON.parse(raw); } catch {}
+            return {status:response.status, headers:response.headers, json, raw};
+          };
+          try {
+            const health = await limited(base + '/api/health');
+            console.log('VERCEL HEALTH:', JSON.stringify({http:health.status,region:health.json?.region || null}));
+            const result = await limited(base + '/api/douyin-resolve', {
+              method:'POST',
+              headers:{'content-type':'application/json'},
+              body:JSON.stringify({url:publicPost})
+            });
+            console.log('VERCEL DOUYIN RESULT:', JSON.stringify({
+              http:result.status,
+              responseKind:result.json ? 'json' : 'non-json',
+              ok:result.json?.ok === true,
+              error:typeof result.json?.error === 'string' ? result.json.error : null,
+              diagnostics:Array.isArray(result.json?.diagnostics) ? result.json.diagnostics : [],
+              platform:result.json?.ok ? result.json?.data?.platform : null,
+              type:result.json?.ok ? result.json?.data?.type : null,
+              mediaAvailable:result.json?.ok ? Boolean(result.json?.data?.videoUrl) : false
+            },null,2));
+            const asset = await limited('https://savedownloader.com/assets/app.js?vercel-check=20261019');
+            console.log('CLOUDFLARE FRONTEND:', JSON.stringify({
+              http:asset.status,usesVercelDouyin:asset.raw.includes('DOUYIN_RESOLVE_API=VERCEL_BASE')
+            }));
+          } catch (error) {
+            console.error('Probe failed:', error?.name || 'unknown-error');
+            process.exitCode = 1;
+          }
+          NODE
