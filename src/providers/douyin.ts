@@ -6,6 +6,20 @@ type AnyRecord = Record<string, any>;
 let cachedTtwid = "";
 let ttwidExpiresAt = 0;
 
+// Only fixed upstream labels and coarse response categories are recorded.
+// No URLs, cookies, HTML bodies, or user identifiers are exposed.
+export class DouyinParseError extends Error {
+  constructor(message: string, public diagnostics: string[]) {
+    super(message);
+    this.name = "DouyinParseError";
+  }
+}
+
+function diagnosticFailure(diagnostics: string[], source: string, error: unknown): void {
+  const name = error instanceof Error ? error.name : "";
+  diagnostics.push(source + ":" + (name === "TimeoutError" || name === "AbortError" ? "timeout" : "network-or-response-error"));
+}
+
 export function isDouyinHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
   return host === "douyin.com" || host.endsWith(".douyin.com") || host === "iesdouyin.com" || host.endsWith(".iesdouyin.com");
@@ -31,7 +45,7 @@ function extractAwemeId(value: string): string | null {
   return null;
 }
 
-async function resolveAwemeId(inputUrl: URL): Promise<string> {
+async function resolveAwemeId(inputUrl: URL, diagnostics: string[]): Promise<string> {
   const direct = extractAwemeId(inputUrl.toString());
   if (direct) return direct;
 
@@ -57,7 +71,8 @@ async function resolveAwemeId(inputUrl: URL): Promise<string> {
       html.match(/\/(?:video|note)\/(\d{8,})/)?.[1];
     if (fromHtml) return fromHtml;
   }
-  throw new Error("Could not find a Douyin post ID in this link.");
+  diagnostics.push("share-link:" + (response.ok ? "no-public-post-id" : "http-" + response.status));
+  throw new DouyinParseError("Could not find a Douyin post ID in this link.", diagnostics);
 }
 
 function firstUrl(value: any): string | null {
@@ -169,6 +184,28 @@ function parseJson(raw: string, allowPercentDecode = false): AnyRecord | null {
   }
 }
 
+async function parsePublicApiResponse(
+  response: Response, awemeId: string, source: string, diagnostics: string[]
+): Promise<AnyRecord | null> {
+  if (!response.ok) {
+    diagnostics.push(source + ":http-" + response.status);
+    return null;
+  }
+  const raw = await response.text();
+  if (!raw.trim()) {
+    diagnostics.push(source + ":empty-body");
+    return null;
+  }
+  const data = parseJson(raw);
+  if (!data) {
+    diagnostics.push(source + ":invalid-json");
+    return null;
+  }
+  const item = findTargetItem(data, awemeId);
+  if (!item) diagnostics.push(source + ":no-matching-public-media");
+  return item;
+}
+
 function extractHydrationPayloads(html: string): AnyRecord[] {
   const payloads: AnyRecord[] = [];
   // Script attributes can arrive in any order.
@@ -207,7 +244,7 @@ function parsePublicPageItem(html: string, awemeId: string): AnyRecord | null {
   return null;
 }
 
-async function fetchPublicItemInfo(awemeId: string): Promise<AnyRecord | null> {
+async function fetchPublicItemInfo(awemeId: string, diagnostics: string[]): Promise<AnyRecord | null> {
   try {
     const response = await fetch(`https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=${encodeURIComponent(awemeId)}`, {
       signal: AbortSignal.timeout(12000),
@@ -220,12 +257,9 @@ async function fetchPublicItemInfo(awemeId: string): Promise<AnyRecord | null> {
       redirect: "follow"
     });
 
-    if (!response.ok) return null;
-    const data = await response.json() as AnyRecord;
-    const item = findTargetItem(data, awemeId);
-    if (item) return item;
-    return null;
-  } catch {
+    return await parsePublicApiResponse(response, awemeId, "ies-iteminfo", diagnostics);
+  } catch (error) {
+    diagnosticFailure(diagnostics, "ies-iteminfo", error);
     return null;
   }
 }
@@ -265,7 +299,7 @@ async function getAnonymousTtwid(): Promise<string> {
 
 // A separate public share API is still used by some mobile pages and avoids
 // relying entirely on the legacy v2 endpoint or the desktop signed API.
-async function fetchPublicIesDetail(awemeId: string): Promise<AnyRecord | null> {
+async function fetchPublicIesDetail(awemeId: string, diagnostics: string[]): Promise<AnyRecord | null> {
   try {
     const apiUrl = new URL("https://www.iesdouyin.com/aweme/v1/web/aweme/detail/");
     apiUrl.searchParams.set("aweme_id", awemeId);
@@ -282,14 +316,14 @@ async function fetchPublicIesDetail(awemeId: string): Promise<AnyRecord | null> 
         "accept-language": "zh-CN,zh;q=0.9"
       }
     });
-    if (!response.ok) return null;
-    return findTargetItem(await response.json() as AnyRecord, awemeId);
-  } catch {
+    return await parsePublicApiResponse(response, awemeId, "ies-detail", diagnostics);
+  } catch (error) {
+    diagnosticFailure(diagnostics, "ies-detail", error);
     return null;
   }
 }
 
-async function fetchPublicWebDetail(awemeId: string): Promise<AnyRecord | null> {
+async function fetchPublicWebDetail(awemeId: string, diagnostics: string[]): Promise<AnyRecord | null> {
   try {
     const ttwid = await getAnonymousTtwid();
     const apiUrl = new URL("https://www.douyin.com/aweme/v1/web/aweme/detail/");
@@ -312,18 +346,14 @@ async function fetchPublicWebDetail(awemeId: string): Promise<AnyRecord | null> 
     if (ttwid) headers.cookie = ttwid;
 
     const response = await fetch(apiUrl, { headers, redirect: "follow", signal: AbortSignal.timeout(12000) });
-    if (!response.ok) return null;
-
-    const data = await response.json() as AnyRecord;
-    const item = findTargetItem(data, awemeId);
-    if (item) return item;
-    return null;
-  } catch {
+    return await parsePublicApiResponse(response, awemeId, "desktop-detail", diagnostics);
+  } catch (error) {
+    diagnosticFailure(diagnostics, "desktop-detail", error);
     return null;
   }
 }
 
-async function fetchHtml(url: string, userAgent: string, referer = "https://www.douyin.com/"): Promise<string | null> {
+async function fetchHtml(url: string, userAgent: string, diagnostics: string[], source: string, referer = "https://www.douyin.com/"): Promise<string | null> {
   try {
     const response = await fetch(url, {
       signal: AbortSignal.timeout(12000),
@@ -335,32 +365,46 @@ async function fetchHtml(url: string, userAgent: string, referer = "https://www.
       },
       redirect: "follow"
     });
-    if (!response.ok) return null;
-    return await response.text();
-  } catch {
+    if (!response.ok) {
+      diagnostics.push(source + ":http-" + response.status);
+      return null;
+    }
+    const html = await response.text();
+    if (!html.trim()) {
+      diagnostics.push(source + ":empty-body");
+      return null;
+    }
+    if (/__ac_nonce|__ac_signature|captcha/i.test(html)) {
+      diagnostics.push(source + ":challenge-page");
+      return null;
+    }
+    return html;
+  } catch (error) {
+    diagnosticFailure(diagnostics, source, error);
     return null;
   }
 }
 
-async function fetchItem(awemeId: string, inputUrl: URL): Promise<AnyRecord> {
-  const publicApiItem = await fetchPublicItemInfo(awemeId);
+async function fetchItem(awemeId: string, inputUrl: URL, diagnostics: string[]): Promise<AnyRecord> {
+  const publicApiItem = await fetchPublicItemInfo(awemeId, diagnostics);
   if (publicApiItem) return publicApiItem;
 
-  const iesDetailItem = await fetchPublicIesDetail(awemeId);
+  const iesDetailItem = await fetchPublicIesDetail(awemeId, diagnostics);
   if (iesDetailItem) return iesDetailItem;
 
-  const webDetailItem = await fetchPublicWebDetail(awemeId);
+  const webDetailItem = await fetchPublicWebDetail(awemeId, diagnostics);
   if (webDetailItem) return webDetailItem;
 
   const candidates = [
-    { url: inputUrl.toString(), userAgent: MOBILE_UA },
-    { url: `https://www.douyin.com/video/${awemeId}`, userAgent: MOBILE_UA },
-    { url: `https://www.iesdouyin.com/share/video/${awemeId}/?from_ssr=1`, userAgent: MOBILE_UA },
+    { source: "shared-page", url: inputUrl.toString(), userAgent: MOBILE_UA },
+    { source: "desktop-page", url: `https://www.douyin.com/video/${awemeId}`, userAgent: MOBILE_UA },
+    { source: "ies-share-video", url: `https://www.iesdouyin.com/share/video/${awemeId}/?from_ssr=1`, userAgent: MOBILE_UA },
     {
+      source: "ixigua-share",
       url: `https://m.ixigua.com/douyin/share/video/${awemeId}?aweme_type=107&schema_type=1&utm_source=copy&utm_campaign=client_share&utm_medium=android&app=aweme`,
       userAgent: DESKTOP_UA
     },
-    { url: `https://www.iesdouyin.com/share/note/${awemeId}/?from_ssr=1`, userAgent: MOBILE_UA }
+    { source: "ies-share-note", url: `https://www.iesdouyin.com/share/note/${awemeId}/?from_ssr=1`, userAgent: MOBILE_UA }
   ];
 
   const tried = new Set<string>();
@@ -368,14 +412,15 @@ async function fetchItem(awemeId: string, inputUrl: URL): Promise<AnyRecord> {
     if (tried.has(candidate.url)) continue;
     tried.add(candidate.url);
 
-    const html = await fetchHtml(candidate.url, candidate.userAgent);
+    const html = await fetchHtml(candidate.url, candidate.userAgent, diagnostics, candidate.source);
     if (!html) continue;
 
     const item = parsePublicPageItem(html, awemeId);
     if (item) return item;
+    diagnostics.push(candidate.source + ":no-matching-public-media");
   }
 
-  throw new Error("This public post could not be parsed.");
+  throw new DouyinParseError("This public post could not be parsed.", diagnostics);
 }
 
 function formatItem(item: AnyRecord, sourceUrl: string, awemeId: string) {
@@ -403,7 +448,8 @@ function formatItem(item: AnyRecord, sourceUrl: string, awemeId: string) {
 }
 
 export async function resolveDouyin(inputUrl: URL) {
-  const awemeId = await resolveAwemeId(inputUrl);
-  const item = await fetchItem(awemeId, inputUrl);
+  const diagnostics: string[] = [];
+  const awemeId = await resolveAwemeId(inputUrl, diagnostics);
+  const item = await fetchItem(awemeId, inputUrl, diagnostics);
   return formatItem(item, inputUrl.toString(), awemeId);
 }
