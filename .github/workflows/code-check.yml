@@ -45,6 +45,8 @@ jobs:
         run: node --test tests/download-contracts.test.mjs
       - name: Test Douyin metadata parser fallbacks
         run: node --test tests/douyin-parser.test.mjs
+      - name: Verify existing Douyin UI browser fallback and video reuse
+        run: node --test tests/douyin-ui-flow.test.mjs
       - name: Check mobile contracts
         run: node --test tests/mobile-contracts.test.mjs
       - name: Verify AdSense readiness safeguards

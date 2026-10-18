@@ -182,6 +182,60 @@ function instagramExtension(contentType: string | null, mediaType: string): stri
   return mediaType === "video" ? "mp4" : "jpg";
 }
 
+// A short-lived edge cache lets the Download button reuse the video found
+// by the preceding Get video request, without launching Browser Run twice.
+// Only matching public Douyin video metadata is cached; no HTML or tokens.
+type DouyinCachedVideo = {
+  platform: "douyin";
+  sourceUrl: string;
+  id: string;
+  videoUrl: string;
+  [key: string]: any;
+};
+type EdgeCache = {
+  match(request: Request): Promise<Response | undefined>;
+  put(request: Request, response: Response): Promise<void>;
+};
+function douyinEdgeCache(): EdgeCache | null {
+  const storage = (globalThis as unknown as { caches?: { default?: EdgeCache } }).caches;
+  return storage?.default ?? null;
+}
+async function douyinCacheRequest(sourceUrl: string): Promise<Request> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sourceUrl));
+  const hex = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return new Request("https://savedownloader.com/__internal/douyin/" + hex);
+}
+async function cacheDouyinVideo(sourceUrl: string, result: AnyRecord): Promise<void> {
+  const cache = douyinEdgeCache();
+  if (!cache || typeof result?.videoUrl !== "string") return;
+  try {
+    normalizeDouyinMediaUrl(result.videoUrl);
+    await cache.put(await douyinCacheRequest(sourceUrl), new Response(JSON.stringify(result), {
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "public, max-age=120"
+      }
+    }));
+  } catch {
+    // Cache failure must never block a successful resolve.
+  }
+}
+async function getCachedDouyinVideo(sourceUrl: string): Promise<DouyinCachedVideo | null> {
+  const cache = douyinEdgeCache();
+  if (!cache) return null;
+  try {
+    const response = await cache.match(await douyinCacheRequest(sourceUrl));
+    if (!response?.ok) return null;
+    const result = await response.json() as AnyRecord;
+    if (result?.platform !== "douyin" || result?.sourceUrl !== sourceUrl ||
+        typeof result?.videoUrl !== "string" || !/^\d{8,}$/.test(String(result?.id ?? ""))) return null;
+    normalizeDouyinMediaUrl(result.videoUrl);
+    return result as DouyinCachedVideo;
+  } catch {
+    return null;
+  }
+}
+
 async function handleResolve(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
   const contentType = request.headers.get("content-type") || "";
@@ -208,12 +262,16 @@ async function handleResolve(request: Request, env: Env): Promise<Response> {
       return json({ ok: false, error: "Authorized browser test token required." }, 403);
     }
     if (url.hostname === "douyin.com" || url.hostname.endsWith(".douyin.com") || url.hostname === "iesdouyin.com" || url.hostname.endsWith(".iesdouyin.com")) {
-      return json({ ok: true, data: await resolveDouyin(assertPublicDouyinUrl(extracted), {
+      const sourceUrl = assertPublicDouyinUrl(extracted);
+      const requestBrowserFallback = new URL(request.url).searchParams.get("tryBrowser") === "1";
+      const resolved = await resolveDouyin(sourceUrl, {
         browser: env.BROWSER,
         browserOnly: browserTest,
-        browserFallback: !browserTest && env.DOUYIN_BROWSER_FALLBACK === "1",
+        browserFallback: !browserTest && (requestBrowserFallback || env.DOUYIN_BROWSER_FALLBACK === "1"),
         browserRateLimit: env.DOUYIN_BROWSER_RATE_LIMIT
-      }) });
+      });
+      if (!browserTest) await cacheDouyinVideo(sourceUrl.toString(), resolved);
+      return json({ ok: true, data: resolved });
     }
     if (isTikTokHost(url.hostname)) {
       return json({ ok: true, data: await resolveTikTok(assertPublicTikTokUrl(extracted)) });
@@ -243,9 +301,10 @@ async function handleDouyinDownload(request: Request, env: Env): Promise<Respons
   try {
     const extracted = extractFirstUrl(rawInput) ?? rawInput;
     const sourceUrl = assertPublicDouyinUrl(extracted);
-    const resolved = await resolveDouyin(sourceUrl, {
+    const cached = await getCachedDouyinVideo(sourceUrl.toString());
+    const resolved = cached ?? await resolveDouyin(sourceUrl, {
       browser: env.BROWSER,
-      browserFallback: env.DOUYIN_BROWSER_FALLBACK === "1",
+      browserFallback: requestUrl.searchParams.get("tryBrowser") === "1" || env.DOUYIN_BROWSER_FALLBACK === "1",
       browserRateLimit: env.DOUYIN_BROWSER_RATE_LIMIT
     }) as AnyRecord;
     const videoUrl = typeof resolved?.videoUrl === "string" ? resolved.videoUrl : "";
