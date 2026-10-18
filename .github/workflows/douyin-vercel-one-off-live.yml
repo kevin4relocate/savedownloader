@@ -43,7 +43,7 @@ jobs:
               type:result.json?.ok ? result.json?.data?.type : null,
               mediaAvailable:result.json?.ok ? Boolean(result.json?.data?.videoUrl) : false
             },null,2));
-            const asset = await limited('https://savedownloader.com/assets/app.js?vercel-check=20261019');
+            const asset = await limited('https://savedownloader.com/assets/app.js?vercel-check=20261019-public-fallbacks');
             console.log('CLOUDFLARE FRONTEND:', JSON.stringify({
               http:asset.status,usesVercelDouyin:asset.raw.includes('DOUYIN_RESOLVE_API=VERCEL_BASE')
             }));
