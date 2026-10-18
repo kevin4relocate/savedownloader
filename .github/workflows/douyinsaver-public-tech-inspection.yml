@@ -95,3 +95,44 @@ jobs:
                       pos=idx+len(term)
                       if pos>0 and js[:pos].count(term)>=2:break
           PY
+      - name: Request one public Douyin post metadata from advertised API
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error,urllib.parse
+          host='https://api.douyinsaver.com'
+          print('API HOST:',host)
+          public_url='https://www.douyin.com/video/7668944508008610298'
+          payload=json.dumps({'url':public_url}).encode()
+          req=urllib.request.Request(host+'/api/parse',data=payload,method='POST',
+            headers={'User-Agent':'Mozilla/5.0','Content-Type':'application/json',
+                     'Origin':'https://douyinsaver.com','Accept':'application/json'})
+          try:
+              response=urllib.request.urlopen(req,timeout=35)
+          except urllib.error.HTTPError as exc:
+              response=exc
+          except Exception as exc:
+              print('API REQUEST ERROR:',type(exc).__name__,str(exc)[:140])
+              raise SystemExit(0)
+          print('API RESPONSE:',{ 'status':response.status,'server':response.headers.get('Server'),
+            'content-type':response.headers.get('Content-Type'),
+            'x-powered-by':response.headers.get('X-Powered-By'),
+            'x-vercel-id':bool(response.headers.get('X-Vercel-Id')),
+            'cf-ray':bool(response.headers.get('Cf-Ray')),
+            'cf-cache-status':response.headers.get('Cf-Cache-Status')})
+          raw=response.read(50000).decode('utf8','replace')
+          try:
+              obj=json.loads(raw)
+              if isinstance(obj,dict):
+                  print('JSON KEYS:',list(obj.keys())[:35])
+                  print('NON-SENSITIVE:',{
+                    'ok':obj.get('ok'),'success':obj.get('success'),
+                    'aweme_id_present':bool(obj.get('aweme_id')),
+                    'media_type':obj.get('media_type'),
+                    'api_url_is_present':bool(obj.get('api_url')),
+                    'video_url_is_present':bool(obj.get('video_url')),
+                    'qualities_count':len(obj.get('qualities',[])) if isinstance(obj.get('qualities'),list) else None,
+                    'error_code':obj.get('code'),'error':str(obj.get('error',obj.get('detail','')))[:160]})
+              else:print('JSON KIND:',type(obj).__name__)
+          except Exception:
+              print('BODY TYPE: non-JSON; body bytes:',len(raw))
+          PY
