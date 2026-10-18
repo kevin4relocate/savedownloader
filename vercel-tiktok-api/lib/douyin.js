@@ -38,6 +38,18 @@ export function normalizeDouyinMediaUrl(value) {
     return url.toString();
   } catch { return null; }
 }
+// The only non-Douyin public source permitted is this fixed Xigua share route.
+// User-supplied URLs are still always restricted to Douyin hosts.
+function assertPublicFetchUrl(value) {
+  const url = new URL(value);
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) {
+    throw new Error('Unsupported public source URL.');
+  }
+  if (isDouyinHost(url.hostname)) return url;
+  if (url.hostname === 'm.ixigua.com' &&
+      /^\/douyin\/share\/video\/\d{8,}\/?$/.test(url.pathname)) return url;
+  throw new Error('Unsupported public source URL.');
+}
 function extractId(value) {
   for (const pattern of [
     /\/(?:video|note)\/(\d{8,})/,
@@ -127,7 +139,7 @@ function diagnoseFetchError(label, error, diagnostics) {
 }
 async function requestPublic(url, headers, ms = 7500) {
   // Limit redirects to avoid cross-domain forwarding and SSRF.
-  let current = assertPublicDouyinUrl(String(url));
+  let current = assertPublicFetchUrl(String(url));
   for (let attempt = 0; attempt < 5; attempt++) {
     const response = await fetch(current, {
       redirect: 'manual',
@@ -137,7 +149,7 @@ async function requestPublic(url, headers, ms = 7500) {
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
       if (!location) return {response, finalUrl: current};
-      current = assertPublicDouyinUrl(new URL(location, current).toString());
+      current = assertPublicFetchUrl(new URL(location, current).toString());
       continue;
     }
     return {response, finalUrl: current};
@@ -243,7 +255,10 @@ export async function resolvePublicDouyin(value) {
     ['original-page', url.toString(), MOBILE_UA],
     ['douyin-page', 'https://www.douyin.com/video/' + id, DESKTOP_UA],
     ['ies-share-page', 'https://www.iesdouyin.com/share/video/' + id + '/?from_ssr=1', MOBILE_UA],
-    ['ies-note-page', 'https://www.iesdouyin.com/share/note/' + id + '/?from_ssr=1', MOBILE_UA]
+    ['ies-note-page', 'https://www.iesdouyin.com/share/note/' + id + '/?from_ssr=1', MOBILE_UA],
+    ['douyin-jingxuan', 'https://www.douyin.com/jingxuan?modal_id=' + id, DESKTOP_UA],
+    ['ixigua-share', 'https://m.ixigua.com/douyin/share/video/' + id +
+      '?aweme_type=107&schema_type=1&utm_source=copy&utm_campaign=client_share&utm_medium=android&app=aweme', DESKTOP_UA]
   ];
   const tried = new Set();
   for (const [label, target, ua] of pages) {
