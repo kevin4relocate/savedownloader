@@ -74,3 +74,24 @@ jobs:
           print('ENDPOINT PATHS:',sorted(paths)[:65])
           print('FETCH LITERALS:',fetches[:40])
           PY
+      - name: Inspect public client call shape around API routes
+        run: |
+          python3 - <<'PY'
+          import urllib.request
+          names=['0gtlnm4.oafmd.js','0yu3k-pmkudgf.js','0ka051yepewro.js']
+          for name in names:
+              url='https://douyinsaver.com/_next/static/chunks/'+name
+              try:
+                  req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})
+                  with urllib.request.urlopen(req,timeout=18) as res:
+                      js=res.read(450000).decode('utf8','replace')
+              except Exception as e:
+                  print('ERROR',name,type(e).__name__);continue
+              for term in ['/api/parse','/api/download/video/','/api/download/audio/']:
+                  pos=0
+                  while (idx:=js.find(term,pos))>=0:
+                      snippet=js[max(0,idx-500):min(len(js),idx+630)]
+                      print('PUBLIC_JS_CONTEXT:',name,term,'=>',snippet[:1150])
+                      pos=idx+len(term)
+                      if pos>0 and js[:pos].count(term)>=2:break
+          PY
