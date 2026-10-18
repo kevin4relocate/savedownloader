@@ -1,0 +1,43 @@
+name: Douyin One-Off Production Diagnostic
+
+on:
+  push:
+    branches:
+      - diagnostics/douyin-live-check-20261019
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Check public Douyin production diagnostics once
+        run: |
+          node --input-type=module <<'NODE'
+          const url = "https://savedownloader.com/api/resolve?diagnose=1&tryBrowser=1";
+          const post = "https://www.douyin.com/video/7668944508008610298";
+          let response;
+          try {
+            response = await fetch(url, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({url: post}),
+              signal: AbortSignal.timeout(130000)
+            });
+            const body = await response.json();
+            // Never print original URL, HTML, cookies, authentication details or CDN links.
+            console.log(JSON.stringify({
+              http: response.status,
+              ok: Boolean(body.ok),
+              error: typeof body.error === "string" ? body.error : null,
+              diagnostics: Array.isArray(body.diagnostics) ? body.diagnostics : [],
+              platform: body.ok ? body.data?.platform : null,
+              mediaType: body.ok ? body.data?.type : null
+            }, null, 2));
+          } catch (error) {
+            console.error("Probe failed:", error?.name || "error");
+            process.exitCode = 1;
+          }
+          NODE
