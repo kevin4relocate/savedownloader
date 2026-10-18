@@ -1,9 +1,16 @@
 import { assertPublicDouyinUrl, DouyinParseError, resolveDouyin } from "./providers/douyin";
+import type { DouyinBrowser } from "./providers/douyin";
 import { assertPublicTikTokUrl, isTikTokHost, resolveTikTok } from "./providers/tiktok";
 import { assertPublicInstagramUrl, isInstagramHost, resolveInstagram } from "./providers/instagram";
 
 type AnyRecord = Record<string, any>;
 type Env = {
+  BROWSER?: DouyinBrowser;
+  DOUYIN_BROWSER_TEST_TOKEN?: string;
+  DOUYIN_BROWSER_FALLBACK?: string;
+  DOUYIN_BROWSER_RATE_LIMIT?: {
+    limit(input: { key: string }): Promise<{ success: boolean }>;
+  };
   CF_VERSION_METADATA?: {
     id?: string;
     tag?: string;
@@ -175,7 +182,7 @@ function instagramExtension(contentType: string | null, mediaType: string): stri
   return mediaType === "video" ? "mp4" : "jpg";
 }
 
-async function handleResolve(request: Request): Promise<Response> {
+async function handleResolve(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
   const contentType = request.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) return json({ error: "Expected application/json" }, 415);
@@ -193,8 +200,20 @@ async function handleResolve(request: Request): Promise<Response> {
 
   try {
     const url = new URL(extracted);
+    const browserTest = new URL(request.url).searchParams.get("browser") === "1";
+    if (browserTest &&
+        (!env.DOUYIN_BROWSER_TEST_TOKEN ||
+          env.DOUYIN_BROWSER_TEST_TOKEN.length < 20 ||
+          request.headers.get("x-douyin-browser-token") !== env.DOUYIN_BROWSER_TEST_TOKEN)) {
+      return json({ ok: false, error: "Authorized browser test token required." }, 403);
+    }
     if (url.hostname === "douyin.com" || url.hostname.endsWith(".douyin.com") || url.hostname === "iesdouyin.com" || url.hostname.endsWith(".iesdouyin.com")) {
-      return json({ ok: true, data: await resolveDouyin(assertPublicDouyinUrl(extracted)) });
+      return json({ ok: true, data: await resolveDouyin(assertPublicDouyinUrl(extracted), {
+        browser: env.BROWSER,
+        browserOnly: browserTest,
+        browserFallback: !browserTest && env.DOUYIN_BROWSER_FALLBACK === "1",
+        browserRateLimit: env.DOUYIN_BROWSER_RATE_LIMIT
+      }) });
     }
     if (isTikTokHost(url.hostname)) {
       return json({ ok: true, data: await resolveTikTok(assertPublicTikTokUrl(extracted)) });
@@ -214,7 +233,7 @@ async function handleResolve(request: Request): Promise<Response> {
   }
 }
 
-async function handleDouyinDownload(request: Request): Promise<Response> {
+async function handleDouyinDownload(request: Request, env: Env): Promise<Response> {
   if (request.method !== "GET") return json({ ok: false, error: "Method not allowed" }, 405);
 
   const requestUrl = new URL(request.url);
@@ -224,7 +243,11 @@ async function handleDouyinDownload(request: Request): Promise<Response> {
   try {
     const extracted = extractFirstUrl(rawInput) ?? rawInput;
     const sourceUrl = assertPublicDouyinUrl(extracted);
-    const resolved = await resolveDouyin(sourceUrl) as AnyRecord;
+    const resolved = await resolveDouyin(sourceUrl, {
+      browser: env.BROWSER,
+      browserFallback: env.DOUYIN_BROWSER_FALLBACK === "1",
+      browserRateLimit: env.DOUYIN_BROWSER_RATE_LIMIT
+    }) as AnyRecord;
     const videoUrl = typeof resolved?.videoUrl === "string" ? resolved.videoUrl : "";
     if (!videoUrl) return json({ ok: false, error: "No downloadable public Douyin video was found." }, 422);
 
@@ -322,6 +345,7 @@ export default {
         version: "0.5.0",
         providers: ["douyin", "tiktok", "instagram"],
         instagramDelivery: "cloudflare",
+        douyinBrowserRun: { available: Boolean(env.BROWSER), fallbackEnabled: env.DOUYIN_BROWSER_FALLBACK === "1" },
         deployment: {
           id: env.CF_VERSION_METADATA?.id ?? null,
           tag: env.CF_VERSION_METADATA?.tag ?? null,
@@ -329,8 +353,8 @@ export default {
         }
       });
     }
-    if (url.pathname === "/api/resolve") return handleResolve(request);
-    if (url.pathname === "/api/download/douyin") return handleDouyinDownload(request);
+    if (url.pathname === "/api/resolve") return handleResolve(request, env);
+    if (url.pathname === "/api/download/douyin") return handleDouyinDownload(request, env);
     if (url.pathname === "/api/download/instagram") return handleInstagramDownload(request);
     return json({ error: "Not found" }, 404);
   }
