@@ -122,7 +122,7 @@ if(form){
         setTimeout(()=>URL.revokeObjectURL(fileUrl),30000);
         setStatus('File handed to your browser. Check Downloads to confirm it was saved.','');
       }
-      trackEvent('download_response_ok',{platform,delivery:platform==='tiktok'?'vercel':'cloudflare'});
+      trackEvent('download_response_ok',{platform,delivery:platform==='tiktok'||platform==='douyin'?'vercel':'cloudflare'});
     }catch(error){
       const timeoutError=error?.name==='AbortError'||error?.name==='TimeoutError';
       setStatus(timeoutError?'Download timed out. Please retry the original link.':error instanceof Error?error.message:'Download failed. Try again.','error');
