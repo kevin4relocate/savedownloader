@@ -31,6 +31,8 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Typecheck Worker
         run: npm run typecheck
+      - name: Validate Cloudflare Worker bundle and bindings (no deploy)
+        run: npx wrangler deploy --dry-run --outdir /tmp/savedownloader-worker-build
       - name: Check browser JavaScript
         run: |
           node --check public/assets/app.js
