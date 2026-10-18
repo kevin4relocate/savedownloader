@@ -89,7 +89,7 @@ test('Douyin diagnostics distinguish empty API, HTTP block and challenge page wi
     assert.ok(error.diagnostics.includes('ies-iteminfo:empty-body'));
     assert.ok(error.diagnostics.includes('ies-detail:http-403'));
     assert.ok(error.diagnostics.includes('desktop-detail:empty-body'));
-    assert.ok(error.diagnostics.includes('desktop-page:challenge-page'));
+    assert.ok(error.diagnostics.includes('shared-page:challenge-page'));
     assert.ok(error.diagnostics.includes('ixigua-share:no-matching-public-media'));
     const serialized = JSON.stringify(error.diagnostics);
     assert.ok(!serialized.includes(id), 'must not contain post ID');
