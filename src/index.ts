@@ -1,4 +1,4 @@
-import { assertPublicDouyinUrl, resolveDouyin } from "./providers/douyin";
+import { assertPublicDouyinUrl, DouyinParseError, resolveDouyin } from "./providers/douyin";
 import { assertPublicTikTokUrl, isTikTokHost, resolveTikTok } from "./providers/tiktok";
 import { assertPublicInstagramUrl, isInstagramHost, resolveInstagram } from "./providers/instagram";
 
@@ -206,7 +206,11 @@ async function handleResolve(request: Request): Promise<Response> {
   } catch (error) {
     const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
     const message = timedOut ? "The source platform took too long. Please retry the original post link." : error instanceof Error ? error.message : "Unable to resolve this link.";
-    return json({ ok: false, error: message }, timedOut ? 504 : 422);
+    // Never log upstream response bodies, shared URLs or user data.
+    if (error instanceof DouyinParseError) console.warn("Douyin upstream diagnostics:", error.diagnostics.join(","));
+    const diagnose = new URL(request.url).searchParams.get("diagnose") === "1";
+    const diagnostics = diagnose && error instanceof DouyinParseError ? { diagnostics: error.diagnostics } : {};
+    return json({ ok: false, error: message, ...diagnostics }, timedOut ? 504 : 422);
   }
 }
 
