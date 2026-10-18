@@ -62,7 +62,7 @@ if(form){
   const startBackendDownload=async(url,control,message,platform)=>{
     const oldText=control.textContent;
     const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),60000);
+    const timeout=setTimeout(()=>controller.abort(),platform==='douyin'?90000:60000);
     control.disabled=true;
     control.textContent='Preparing download…';
     setStatus(message,'loading');
@@ -201,7 +201,7 @@ if(form){
   const downloadDouyinViaBackend=(sourceUrl,control)=>{
     if(!sourceUrl){setStatus('The original Douyin post URL is missing. Resolve the post again.','error');return;}
     startBackendDownload(
-      `/api/download/douyin?url=${encodeURIComponent(sourceUrl)}`,
+      `/api/download/douyin?tryBrowser=1&url=${encodeURIComponent(sourceUrl)}`,
       control,
       'Douyin blocked the direct media request. Retrying through SaveDownloader…',
       'douyin'
@@ -261,6 +261,21 @@ if(form){
     result.classList.add('show');
   };
 
+  const explainDouyinError=(payload)=>{
+    const diagnostics=Array.isArray(payload?.diagnostics)?payload.diagnostics:[];
+    if(diagnostics.includes('browser-run:rate-limited'))return 'Too many Douyin browser checks are running right now. Please wait a minute and try again.';
+    if(diagnostics.includes('browser-run:rate-limit-unavailable'))return 'The browser check is temporarily unavailable on Cloudflare. Please try again later.';
+    if(diagnostics.includes('browser-run:not-configured'))return 'The Douyin browser check is not configured on this server.';
+    if(diagnostics.includes('browser-run:challenge-page')||
+      (diagnostics.some(item=>item.endsWith(':challenge-page'))&&diagnostics.some(item=>item.includes(':http-403'))))
+      return 'Douyin is requiring verification from our server. This post cannot be downloaded through SaveDownloader right now.';
+    if(diagnostics.includes('browser-run:no-matching-public-media'))
+      return 'The public post page loaded, but Douyin did not expose downloadable video data. Try another public post.';
+    if(diagnostics.some(item=>item.startsWith('browser-run:')&&item.includes('error')))
+      return 'The Cloudflare browser could not read this Douyin post. Please retry later.';
+    return typeof payload?.error==='string'?payload.error:'Unable to check this Douyin post.';
+  };
+
   form.addEventListener('submit',async(event)=>{
     event.preventDefault();
     const url=input.value.trim();
@@ -268,17 +283,25 @@ if(form){
     const requestedPlatform=guessPlatform(url);
     button.disabled=true;
     result.classList.remove('show');
-    setStatus('Checking the public media link…','loading');
+    setStatus(requestedPlatform==='douyin'
+      ?'Checking the Douyin post… If public metadata is blocked, Cloudflare will try a browser. This can take up to a minute.'
+      :'Checking the public media link…','loading');
     try{
-      const response=await fetch('/api/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url}),signal:AbortSignal.timeout(35000)});
+      const endpoint=requestedPlatform==='douyin'?'/api/resolve?tryBrowser=1&diagnose=1':'/api/resolve';
+      const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url}),signal:AbortSignal.timeout(requestedPlatform==='douyin'?90000:35000)});
       const payload=await response.json().catch(()=>({ok:false,error:`Resolver returned an unexpected response (HTTP ${response.status}). Please retry.` }));
-      if(!response.ok||!payload.ok)throw new Error(payload.error||'Unable to resolve this link.');
+      if(!response.ok||!payload.ok)throw new Error(requestedPlatform==='douyin'
+        ?explainDouyinError(payload)
+        :payload.error||'Unable to resolve this link.');
       trackEvent('resolve_success',{
         platform:payload.data?.platform||requestedPlatform,
         media_type:payload.data?.type||'unknown'
       });
       clearStatus();
       render(payload.data);
+      if(payload.data?.platform==='douyin'){
+        setStatus('Public media found. Click Download video to check whether Douyin allows the actual file transfer.','');
+      }
     }catch(error){
       trackEvent('resolve_failed',{platform:requestedPlatform});
       setStatus(error?.name==='TimeoutError'?'The platform did not respond in time. Please retry with the original post URL.':error instanceof Error?error.message:'Something went wrong. Please try again.','error');
