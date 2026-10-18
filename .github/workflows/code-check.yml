@@ -47,6 +47,12 @@ jobs:
         run: node --test tests/douyin-parser.test.mjs
       - name: Verify existing Douyin UI browser fallback and video reuse
         run: node --test tests/douyin-ui-flow.test.mjs
+      - name: Check Vercel Douyin resolver and video download
+        run: |
+          node --check vercel-tiktok-api/api/douyin-resolve.js
+          node --check vercel-tiktok-api/api/douyin-download.js
+          node --check vercel-tiktok-api/lib/douyin.js
+          node --test tests/vercel-douyin.test.mjs
       - name: Check mobile contracts
         run: node --test tests/mobile-contracts.test.mjs
       - name: Verify AdSense readiness safeguards
