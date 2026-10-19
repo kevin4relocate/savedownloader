@@ -193,3 +193,25 @@ test('Cloudflare staging configuration is independently rate-limited and has no 
   assert.ok(Number(manifest.devDependencies.wrangler.split('.')[1])>=136);
   assert.equal(manifest.scripts.preview,'wrangler preview');
 });
+
+
+test('Cloudflare Preview status does not leak DTK URLs, secret token, API key or Access credentials',async()=>{
+  const url='https://preview.example.com/api/dtk/status';
+  const configured=env();
+  configured.DTK_ACCESS_CLIENT_ID='private-client-id';
+  configured.DTK_ACCESS_CLIENT_SECRET='private-client-secret';
+  const response=await worker.fetch(new Request(url),configured);
+  assert.equal(response.status,200);
+  const payload=await response.json();
+  assert.deepEqual(payload,{ok:true,mode:'dtk-preview',
+    backendConfigured:true,rateLimitConfigured:true});
+  const dump=JSON.stringify(payload);
+  for(const privateValue of [key,token,configured.DTK_API_URL,
+    configured.DTK_ACCESS_CLIENT_ID,configured.DTK_ACCESS_CLIENT_SECRET]){
+    assert.ok(!dump.includes(privateValue));
+  }
+  const noConfig=await worker.fetch(new Request(url),{});
+  assert.equal(noConfig.status,200);
+  assert.equal((await noConfig.json()).backendConfigured,false);
+  assert.equal((await worker.fetch(new Request(url,{method:'POST'}),configured)).status,405);
+});
