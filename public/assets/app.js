@@ -10,8 +10,10 @@ if(form){
   const DOUYIN_DOWNLOAD_API=VERCEL_BASE+'/api/douyin-download';
   // Opt-in branch/local-only UI. No DTK credentials or preview token are saved
   // in localStorage, cookies or URL query parameters.
-  const isDtkPreview=new URLSearchParams(location.search).get('dtk')==='1'&&
-    /^\/douyin-downloader\/?$/.test(location.pathname);
+  // On this isolated Git branch, the standard Douyin preview page tests DTK.
+  // Add ?dtk=0 only to compare against the old Vercel path.
+  const isDtkPreview=/^\/douyin-downloader\/?$/.test(location.pathname)&&
+    new URLSearchParams(location.search).get('dtk')!=='0';
   let dtkPreviewTokenInput=null;
   if(isDtkPreview){
     const panel=document.createElement('div');
