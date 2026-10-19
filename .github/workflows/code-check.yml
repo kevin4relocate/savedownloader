@@ -53,6 +53,8 @@ jobs:
           node --check vercel-tiktok-api/api/douyin-download.js
           node --check vercel-tiktok-api/lib/douyin.js
           node --test tests/vercel-douyin.test.mjs
+      - name: Test optional Evil0ctal DTK v5 preview adapter and Worker routes
+        run: node --test tests/dtk-preview.test.mjs
       - name: Check mobile contracts
         run: node --test tests/mobile-contracts.test.mjs
       - name: Verify AdSense readiness safeguards

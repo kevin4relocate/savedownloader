@@ -9,10 +9,11 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "preview": "wrangler preview"
   },
   "devDependencies": {
     "typescript": "5.9.3",
-    "wrangler": "4.127.0"
+    "wrangler": "4.136.3"
   }
 }

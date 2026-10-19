@@ -9,10 +9,12 @@ const compile = (source) => ts.transpileModule(source, {
 }).outputText;
 const dataModule = (source) => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 const douyin = dataModule(compile(text('src/providers/douyin.ts')));
+const dtk = dataModule(compile(text('src/providers/dtk.ts')));
 const tiktok = dataModule(compile(text('src/providers/tiktok.ts')));
 const instagram = dataModule(compile(text('src/providers/instagram.ts')));
 const compiledWorker = compile(text('src/index.ts'))
   .replaceAll('from "./providers/douyin"', 'from "' + douyin + '"')
+  .replaceAll('from "./providers/dtk"', 'from "' + dtk + '"')
   .replaceAll('from "./providers/tiktok"', 'from "' + tiktok + '"')
   .replaceAll('from "./providers/instagram"', 'from "' + instagram + '"');
 const { default: worker } = await import(dataModule(compiledWorker));

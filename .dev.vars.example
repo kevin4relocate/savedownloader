@@ -1,0 +1,5 @@
+# LOCAL branch test only. Copy to .dev.vars, do not commit the real values.
+# Use the local Evil0ctal DTK v5 API on your Mac.
+DTK_API_URL=http://127.0.0.1:8000/
+DTK_API_KEY=REPLACE_WITH_DTK_API_KEY_scoped_douyin_read
+DTK_TEST_TOKEN=REPLACE_WITH_LONG_PRIVATE_TEST_TOKEN_AT_LEAST_24_CHARS

@@ -19,3 +19,15 @@
   .content{overflow-wrap:break-word}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+/* Shown only when ?dtk=1 is opened on the Douyin preview page. */
+.dtk-preview-panel{width:min(100%,920px);margin:12px auto 0;padding:15px 17px;
+  border:1px solid #6573b2;border-radius:14px;background:rgba(73,85,158,.13);
+  color:var(--text);text-align:left}
+.dtk-preview-panel strong{display:block;margin-bottom:4px}
+.dtk-preview-panel p{color:var(--muted);font-size:13px;margin:3px 0 10px}
+.dtk-preview-panel label{font-size:13px;display:grid;gap:6px;max-width:420px}
+.dtk-preview-panel input{width:100%;min-height:44px;padding:10px 12px;
+  border:1px solid #516080;border-radius:10px;background:#0f141d;
+  color:var(--text);font-size:16px}
+.dtk-preview-panel input:focus{outline:2px solid var(--brand);outline-offset:2px}

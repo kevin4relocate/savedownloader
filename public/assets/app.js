@@ -8,6 +8,48 @@ if(form){
   const TIKTOK_DOWNLOAD_API=VERCEL_BASE+'/api/download';
   const DOUYIN_RESOLVE_API=VERCEL_BASE+'/api/douyin-resolve';
   const DOUYIN_DOWNLOAD_API=VERCEL_BASE+'/api/douyin-download';
+  // Evil0ctal is opt-in on all environments. Do not make production depend
+  // on an unconfigured external Docker backend. Secrets are never browser-side.
+  const isDtkPreview=/^\/douyin-downloader\/?$/.test(location.pathname)&&
+    new URLSearchParams(location.search).get('dtk')==='1';
+  let dtkPreviewTokenInput=null;
+  if(isDtkPreview){
+    const panel=document.createElement('div');
+    panel.className='dtk-preview-panel';
+    const title=document.createElement('strong');
+    title.textContent='Evil0ctal DTK v5 — private branch preview';
+    const text=document.createElement('p');
+    text.textContent='Checking whether the Cloudflare Preview is connected to a DTK backend…';
+    const label=document.createElement('label');
+    label.textContent='DTK preview token';
+    label.htmlFor='dtk-preview-token';
+    dtkPreviewTokenInput=document.createElement('input');
+    dtkPreviewTokenInput.id='dtk-preview-token';
+    dtkPreviewTokenInput.type='password';
+    dtkPreviewTokenInput.autocomplete='off';
+    dtkPreviewTokenInput.spellcheck=false;
+    dtkPreviewTokenInput.placeholder='Private test token';
+    label.append(dtkPreviewTokenInput);
+    panel.append(title,text,label);
+    form.after(panel);
+    fetch('/api/dtk/status',{cache:'no-store',signal:AbortSignal.timeout(6500)})
+      .then(response=>response.json())
+      .then(details=>{
+        if(details?.mode!=='dtk-preview')throw new Error('Unexpected preview response');
+        if(!details.backendConfigured){
+          text.textContent='Cloudflare Preview is online, but the Evil0ctal backend is not connected yet. Configure the Preview-only DTK secrets in Cloudflare before testing a video.';
+        }else if(!details.rateLimitConfigured){
+          text.textContent='Evil0ctal is configured, but the isolated preview rate limiter is missing. Contact the Worker administrator.';
+        }else{
+          text.textContent='Evil0ctal backend settings are present. Enter the private preview test token to check a public Douyin video. Credentials are never stored.';
+        }
+      })
+      .catch(()=>{
+        text.textContent='Could not verify DTK preview configuration. Try refreshing this staging page.';
+      });
+  }
+  const dtkPreviewToken=()=>dtkPreviewTokenInput?.value.trim()||'';
+
 
   const setStatus=(message,type)=>{
     status.textContent=message;
@@ -62,7 +104,7 @@ if(form){
     },{once:true});
     status.append(' ',link);
   };
-  const startBackendDownload=async(url,control,message,platform)=>{
+  const startBackendDownload=async(url,control,message,platform,authHeaders=null)=>{
     const oldText=control.textContent;
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),platform==='douyin'?90000:60000);
@@ -83,7 +125,7 @@ if(form){
       trackEvent('download_browser_handoff',{platform});
     };
     try{
-      const response=await fetch(url,{signal:controller.signal,credentials:'omit'});
+      const response=await fetch(url,{signal:controller.signal,credentials:'omit',...(authHeaders?{headers:authHeaders}:{})});
       if(!response.ok){
         let detail='';
         try{detail=(await response.json())?.error||'';}catch{}
@@ -94,6 +136,7 @@ if(form){
       const limit=48*1024*1024;
       if(Number(response.headers.get('content-length')||0)>limit){
         await response.body?.cancel();
+        if(authHeaders)throw new Error('DTK preview: video is larger than the 48 MB in-browser limit. Try the direct CDN link.');
         handoff();
         return;
       }
@@ -105,7 +148,12 @@ if(form){
         const {value,done}=await reader.read();
         if(done)break;
         size+=value.byteLength;
-        if(size>limit){await reader.cancel();handoff();return;}
+        if(size>limit){
+          await reader.cancel();
+          if(authHeaders)throw new Error('DTK preview: video is larger than 48 MB. Try the direct CDN link.');
+          handoff();
+          return;
+        }
         chunks.push(value);
       }
       if(!size)throw new Error('The source returned an empty video file.');
@@ -122,7 +170,7 @@ if(form){
         setTimeout(()=>URL.revokeObjectURL(fileUrl),30000);
         setStatus('File handed to your browser. Check Downloads to confirm it was saved.','');
       }
-      trackEvent('download_response_ok',{platform,delivery:platform==='tiktok'||platform==='douyin'?'vercel':'cloudflare'});
+      trackEvent('download_response_ok',{platform,delivery:authHeaders?'dtk_cloudflare':platform==='tiktok'||platform==='douyin'?'vercel':'cloudflare'});
     }catch(error){
       const timeoutError=error?.name==='AbortError'||error?.name==='TimeoutError';
       setStatus(timeoutError?'Download timed out. Please retry the original link.':error instanceof Error?error.message:'Download failed. Try again.','error');
@@ -211,6 +259,18 @@ if(form){
     );
   };
 
+  const downloadDtkViaBackend=(sourceUrl,control)=>{
+    const token=dtkPreviewToken();
+    if(!token){setStatus('Enter the private DTK preview token first.','error');return;}
+    startBackendDownload(
+      `/api/dtk/download?url=${encodeURIComponent(sourceUrl)}`,
+      control,
+      'DTK metadata was found. Cloudflare is trying to stream the public video file…',
+      'douyin',
+      {'x-dtk-test-token':token}
+    );
+  };
+
   const render=(data)=>{
     const cover=result.querySelector('[data-cover]');
     const title=result.querySelector('[data-title]');
@@ -237,6 +297,17 @@ if(form){
         }
         if(data.platform==='douyin'){
           trackEvent('download_douyin',{media_type:'video',delivery:'direct_with_vercel_fallback'});
+          if(isDtkPreview&&data.provider==='dtk'){
+            trackEvent('download_douyin_dtk_preview',{media_type:'video'});
+            if(isIOS())downloadDtkViaBackend(data.sourceUrl,downloadButton);
+            else downloadDirect(
+              data.videoUrl,
+              safeFilename(mediaTitle,'mp4'),
+              downloadButton,
+              ()=>downloadDtkViaBackend(data.sourceUrl,downloadButton)
+            );
+            return;
+          }
           if(isIOS())downloadDouyinViaBackend(data.sourceUrl,downloadButton);
           else downloadDirect(
             data.videoUrl,
@@ -280,17 +351,26 @@ if(form){
     const url=input.value.trim();
     if(!url){setStatus('Paste a public Douyin or TikTok link first.','error');return;}
     const requestedPlatform=guessPlatform(url);
+    if(isDtkPreview&&requestedPlatform==='douyin'&&!dtkPreviewToken()){
+      setStatus('Enter your DTK preview test token first.','error');
+      return;
+    }
     button.disabled=true;
     result.classList.remove('show');
-    setStatus(requestedPlatform==='douyin'
-      ?'Checking the public Douyin post through the Vercel server…'
+    setStatus(isDtkPreview&&requestedPlatform==='douyin'
+      ?'Checking the public Douyin post through self-hosted Evil0ctal DTK…'
+      :requestedPlatform==='douyin'?'Checking the public Douyin post through the Vercel server…'
       :'Checking the public media link…','loading');
     try{
-      const endpoint=requestedPlatform==='douyin'?DOUYIN_RESOLVE_API:'/api/resolve';
-      const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url}),signal:AbortSignal.timeout(requestedPlatform==='douyin'?90000:35000)});
+      const endpoint=isDtkPreview&&requestedPlatform==='douyin'?'/api/dtk/resolve'
+        :requestedPlatform==='douyin'?DOUYIN_RESOLVE_API:'/api/resolve';
+      const headers={'content-type':'application/json'};
+      if(isDtkPreview&&requestedPlatform==='douyin')headers['x-dtk-test-token']=dtkPreviewToken();
+      const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({url}),signal:AbortSignal.timeout(requestedPlatform==='douyin'?90000:35000)});
       const payload=await response.json().catch(()=>({ok:false,error:`Resolver returned an unexpected response (HTTP ${response.status}). Please retry.` }));
-      if(!response.ok||!payload.ok)throw new Error(requestedPlatform==='douyin'
-        ?explainDouyinError(payload)
+      if(!response.ok||!payload.ok)throw new Error(isDtkPreview&&requestedPlatform==='douyin'
+        ?(payload.error||'DTK preview request failed.')
+        :requestedPlatform==='douyin'?explainDouyinError(payload)
         :payload.error||'Unable to resolve this link.');
       trackEvent('resolve_success',{
         platform:payload.data?.platform||requestedPlatform,
@@ -299,7 +379,9 @@ if(form){
       clearStatus();
       render(payload.data);
       if(payload.data?.platform==='douyin'){
-        setStatus('Public media found on Vercel. Click Download video to check the actual file transfer.','');
+        setStatus(payload.data.provider==='dtk'
+          ?'DTK returned public media metadata. Click Download video to verify the actual file transfer.'
+          :'Public media found on Vercel. Click Download video to check the actual file transfer.','');
       }
     }catch(error){
       trackEvent('resolve_failed',{platform:requestedPlatform});

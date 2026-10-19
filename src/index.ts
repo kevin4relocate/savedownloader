@@ -1,5 +1,6 @@
 import { assertPublicDouyinUrl, DouyinParseError, resolveDouyin } from "./providers/douyin";
 import type { DouyinBrowser } from "./providers/douyin";
+import { DtkPreviewError, resolveDouyinDtk } from "./providers/dtk";
 import { assertPublicTikTokUrl, isTikTokHost, resolveTikTok } from "./providers/tiktok";
 import { assertPublicInstagramUrl, isInstagramHost, resolveInstagram } from "./providers/instagram";
 
@@ -7,6 +8,11 @@ type AnyRecord = Record<string, any>;
 type Env = {
   BROWSER?: DouyinBrowser;
   DOUYIN_BROWSER_TEST_TOKEN?: string;
+  DTK_API_URL?: string;
+  DTK_API_KEY?: string;
+  DTK_ACCESS_CLIENT_ID?: string;
+  DTK_ACCESS_CLIENT_SECRET?: string;
+  DTK_TEST_TOKEN?: string;
   DOUYIN_BROWSER_FALLBACK?: string;
   DOUYIN_BROWSER_RATE_LIMIT?: {
     limit(input: { key: string }): Promise<{ success: boolean }>;
@@ -394,6 +400,108 @@ async function handleInstagramDownload(request: Request): Promise<Response> {
   }
 }
 
+// Branch-preview integration. Kept behind a separate API path and an explicit
+// operator-only test token so public users cannot spend self-hosted DTK quota.
+async function authorizeDtkPreview(request: Request, env: Env): Promise<Response | null> {
+  const provided = request.headers.get("x-dtk-test-token") || "";
+  if (!env.DTK_TEST_TOKEN || env.DTK_TEST_TOKEN.length < 24 || provided !== env.DTK_TEST_TOKEN) {
+    return json({ok: false, error: "A valid DTK preview test token is required."}, 403);
+  }
+  if (!env.DOUYIN_BROWSER_RATE_LIMIT) {
+    return json({ok: false, error: "DTK preview rate limiter is not configured."}, 503);
+  }
+  try {
+    const {success} = await env.DOUYIN_BROWSER_RATE_LIMIT.limit({key:"dtk-preview-public"});
+    if (!success) return json({ok:false,error:"DTK preview rate limit reached. Try in a minute."},429);
+  } catch {
+    return json({ok:false,error:"DTK preview rate limiter unavailable."},503);
+  }
+  return null;
+}
+function dtkLocalDev(request: Request): boolean {
+  const hostname = new URL(request.url).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+function dtkFailure(error: unknown): Response {
+  if (error instanceof DtkPreviewError) {
+    return json({ok:false,error:error.message,reason:error.reason},error.status);
+  }
+  return json({ok:false,error:"DTK preview failed. Inspect the local Docker logs."},502);
+}
+
+async function handleDtkPreviewStatus(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "GET") return json({ok:false,error:"Method not allowed"},405);
+  // Do not expose upstream hostnames, secret values or API key scope information.
+  return json({
+    ok:true,
+    mode:"dtk-preview",
+    backendConfigured:Boolean(env.DTK_API_URL && env.DTK_API_KEY && env.DTK_TEST_TOKEN),
+    rateLimitConfigured:Boolean(env.DOUYIN_BROWSER_RATE_LIMIT)
+  });
+}
+
+async function handleDtkPreviewResolve(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "POST") return json({ok:false,error:"Method not allowed"},405);
+  const guard = await authorizeDtkPreview(request, env);
+  if (guard) return guard;
+  if (!(request.headers.get("content-type") || "").includes("application/json")) {
+    return json({ok:false,error:"Expected application/json"},415);
+  }
+  let input: Record<string, unknown>;
+  try { input = await request.json() as Record<string, unknown>; }
+  catch { return json({ok:false,error:"Invalid JSON"},400); }
+  const text = typeof input?.url === "string" ? input.url.trim() : "";
+  if (!text || text.length > 2048) return json({ok:false,error:"Enter a public Douyin link."},400);
+  try {
+    const url = new URL(extractFirstUrl(text) ?? text);
+    const data = await resolveDouyinDtk(url, {
+      baseUrl:env.DTK_API_URL, apiKey:env.DTK_API_KEY,
+      accessClientId:env.DTK_ACCESS_CLIENT_ID,
+      accessClientSecret:env.DTK_ACCESS_CLIENT_SECRET,
+      localDev:dtkLocalDev(request)
+    });
+    return json({ok:true,data});
+  } catch (error) {
+    return dtkFailure(error);
+  }
+}
+
+async function handleDtkPreviewDownload(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "GET") return json({ok:false,error:"Method not allowed"},405);
+  const guard = await authorizeDtkPreview(request, env);
+  if (guard) return guard;
+  const text = new URL(request.url).searchParams.get("url")?.trim() || "";
+  if (!text || text.length > 2048) return json({ok:false,error:"Enter a public Douyin link."},400);
+  try {
+    const url = new URL(extractFirstUrl(text) ?? text);
+    const data = await resolveDouyinDtk(url, {
+      baseUrl:env.DTK_API_URL, apiKey:env.DTK_API_KEY,
+      accessClientId:env.DTK_ACCESS_CLIENT_ID,
+      accessClientSecret:env.DTK_ACCESS_CLIENT_SECRET,
+      localDev:dtkLocalDev(request)
+    });
+    if (!data.videoUrl) return json({ok:false,error:"No public video URL returned by DTK."},422);
+    const header = request.headers.get("range");
+    const range = header && /^bytes=\d*-\d*$/i.test(header) ? header : null;
+    const media = await fetchDouyinMedia(data.videoUrl, range);
+    if (!media) {
+      return json({ok:false,error:"The media CDN refused this file from Cloudflare. DTK metadata may still be valid."},502);
+    }
+    const headers = new Headers();
+    for (const name of ["content-type","content-length","content-range","accept-ranges","etag","last-modified"]) {
+      const value = media.headers.get(name);
+      if (value) headers.set(name,value);
+    }
+    headers.set("cache-control","private, no-store");
+    headers.set("x-content-type-options","nosniff");
+    headers.set("x-robots-tag","noindex, nofollow, noarchive");
+    headers.set("content-disposition", 'attachment; filename="douyin-' + String(data.id).replace(/[^0-9]/g,"") + '.mp4"');
+    return new Response(media.body,{status:media.status,headers});
+  } catch (error) {
+    return dtkFailure(error);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -412,6 +520,9 @@ export default {
         }
       });
     }
+    if (url.pathname === "/api/dtk/status") return handleDtkPreviewStatus(request, env);
+    if (url.pathname === "/api/dtk/resolve") return handleDtkPreviewResolve(request, env);
+    if (url.pathname === "/api/dtk/download") return handleDtkPreviewDownload(request, env);
     if (url.pathname === "/api/resolve") return handleResolve(request, env);
     if (url.pathname === "/api/download/douyin") return handleDouyinDownload(request, env);
     if (url.pathname === "/api/download/instagram") return handleInstagramDownload(request);
