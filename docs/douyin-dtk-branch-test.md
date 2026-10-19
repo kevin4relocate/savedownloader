@@ -8,16 +8,45 @@ of Evil0ctal/Douyin_TikTok_Download_API v5 and a read-only API key.
 
 ## Cloudflare branch preview — test online before merging
 
-**Deployed branch URL:**
+**Existing legacy branch/version URL (not an isolated Worker Preview yet):**
 https://feature-douyin-evil0ctal-preview-20261019-savedownloader.kevin4relocate.workers.dev/douyin-downloader/
 
 **GitHub PR:** https://github.com/kevin4relocate/savedownloader/pull/40
 
-Cloudflare Workers Builds has reported a **successful branch Preview deployment**.
-This is an isolated Worker Preview under workers.dev, not a change to
-https://savedownloader.com/. Changes pushed to this branch update the same
-Preview URL. Do NOT merge to main until a public sample video can be both
-resolved and downloaded.
+IMPORTANT CORRECTION (2026-10-19): Cloudflare's dashboard displayed
+"Create your first Preview" even though branch builds and the URL above worked.
+This indicates the existing Worker still uses the older branch *Version URL*
+workflow. A successful branch build is not proof that a true isolated Worker
+Preview has been created. Do not add staging-only credentials or secrets to
+Production while switching.
+
+### One-time switch to real Worker Previews
+
+In Cloudflare Dashboard:
+1. Workers & Pages > savedownloader > **Settings > Builds**.
+2. Find **Set up Worker Previews**, click **Set up**.
+3. Keep **Production branch** set to `main`; **Enable Preview Builds**.
+4. Review the preview config and select **Preview command**
+   `npx wrangler preview`, not `wrangler versions upload`.
+5. Review the isolation settings (the repo defines a `previews` block in
+   `wrangler.jsonc`), and confirm **Switch to Worker Previews**.
+
+**This switch is irreversible** according to Cloudflare. It replaces the
+old branch Version URL workflow, not your production code.
+
+After switching, push another commit to the existing feature branch, or use
+your Cloudflare build Retry button if it rebuilds with the new Preview command.
+The Preview must then appear in the selector at the top of the Worker page,
+and Cloudflare should comment on PR #40 with its real Preview URL. Only then
+add *Preview-only* secrets. The existing URL may look similar, but use the
+actual Preview URL returned after the switch.
+
+Official:
+https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/
+https://developers.cloudflare.com/workers/previews/get-started/
+
+Do NOT merge to main until a public sample video can be both resolved and
+downloaded.
 
 The standard Douyin page on this branch uses Evil0ctal DTK automatically.
 No special query is needed. Add ?dtk=0 to compare the old Vercel path.
@@ -187,10 +216,10 @@ are not supported by the in-browser transfer helper.
   per edge location. Allow one for parse and one for download.
 - The preview Worker only accepts a locally hosted HTTP DTK URL when accessed
   locally on localhost / 127.0.0.1. Hosted Workers require an HTTPS DTK origin.
-- **A Git branch is not a deployed preview website.** Test via npm run dev first.
-  Do not deploy the branch to the production Cloudflare Worker or copy secrets
-  into the repo. Hosting this later requires a separate staging Worker and a
-  private HTTPS DTK service.
+- Branch Version URLs and real Worker Previews are different. Complete the
+  one-time Worker Previews switch above to isolate branch secrets and bindings.
+  Do not deploy the branch to the Production Worker or copy secrets into git.
+  Hosted metadata tests also require your own HTTPS DTK service.
 - This branch does not automatically expose a running Docker service on the Mac
   to Cloudflare on the internet.
 
