@@ -6,6 +6,89 @@ This is a private test integration. It does not replace the main website's
 Douyin, TikTok or Instagram flows. It requires your **own running instance**
 of Evil0ctal/Douyin_TikTok_Download_API v5 and a read-only API key.
 
+## Cloudflare branch preview — test online before merging
+
+**Deployed branch URL:**
+https://feature-douyin-evil0ctal-preview-20261019-savedownloader.kevin4relocate.workers.dev/douyin-downloader/
+
+**GitHub PR:** https://github.com/kevin4relocate/savedownloader/pull/40
+
+Cloudflare Workers Builds has reported a **successful branch Preview deployment**.
+This is an isolated Worker Preview under workers.dev, not a change to
+https://savedownloader.com/. Changes pushed to this branch update the same
+Preview URL. Do NOT merge to main until a public sample video can be both
+resolved and downloaded.
+
+The standard Douyin page on this branch uses Evil0ctal DTK automatically.
+No special query is needed. Add ?dtk=0 to compare the old Vercel path.
+The page displays a preview-token field and a readiness message from
+GET /api/dtk/status; no secrets are included in the response.
+
+### Important: Cloudflare cannot run the full Evil0ctal v5 stack
+
+The branch Preview hosts only the frontend and Cloudflare Worker adapter.
+DTK v5 includes Python/FastAPI, PostgreSQL + TimescaleDB, Redis and an optional
+browser container. It needs an external Docker host. Until a DTK HTTPS service
+is connected, the page shows backend not configured and cannot fetch media.
+A Preview deployment success does not prove Douyin metadata can be parsed.
+
+### Connect a self-hosted DTK backend securely
+
+Use an already-hosted authorized DTK v5 instance if available. For a free trial,
+you can run DTK Docker on Mac and expose a **Cloudflare Access-protected HTTPS
+Tunnel** to the Preview Worker. Mac must remain on during testing.
+
+1. Start DTK on Mac as documented below. In its admin console create an API
+   key with scope douyin:read only. Test the key in DTK's own Playground.
+2. In Cloudflare Zero Trust → Networks → Tunnels create a named Tunnel.
+   Configure public hostname dtk-test.savedownloader.com (or your chosen name)
+   to route to http://127.0.0.1:8000 on your Mac. Run cloudflared on your Mac.
+3. In Zero Trust → Access → Applications protect the hostname using a
+   **Service Auth** policy with a newly created Access service token.
+   Do not set public Bypass. Keep DTK admin accessible at localhost on Mac.
+   Protect the hostname before sharing it.
+4. Open Cloudflare Workers & Pages → savedownloader, switch from Production
+   to this Preview branch, then go to Settings → Variables and Secrets.
+   Add all **five Preview-only secrets**:
+
+   - DTK_API_URL = https://dtk-test.savedownloader.com/ (or your HTTPS URL)
+   - DTK_API_KEY = DTK read-only API key scoped douyin:read
+   - DTK_TEST_TOKEN = independent random password (at least 24 characters)
+   - DTK_ACCESS_CLIENT_ID = Cloudflare Access service-token client ID
+   - DTK_ACCESS_CLIENT_SECRET = matching Access client secret
+
+   If your DTK service uses a different trusted HTTPS authentication method,
+   the Access ID and secret can be omitted **together**. Do not make an admin
+   console publicly accessible solely for testing.
+
+   Do not add credentials to GitHub commits, public vars, URLs or chat. Set
+   them only on this Preview, never on Production.
+
+5. Reload the Preview URL above. Check that the status says DTK settings
+   are present. Enter the DTK_TEST_TOKEN in the password-style field, paste
+   https://www.douyin.com/video/7668944508008610298, click Get media, and if
+   metadata succeeds click Download video. Verify an MP4 was actually saved.
+
+### Cloudflare Preview status and settings
+
+- GET /api/dtk/status returns booleans for backend configuration and rate-limit
+  binding. It does not verify connectivity or disclose origin/credentials.
+- The two test endpoints require x-dtk-test-token.
+- Preview rate-limit namespace 716034 is separate from production 716032:
+  2 preview requests per 60 seconds per Cloudflare location, not globally.
+- Preview uses Wrangler 4.136.3 and the previews block in wrangler.jsonc.
+- If builds stop, confirm Workers & Pages → savedownloader → Settings → Builds →
+  Preview Builds enabled, Preview command: npx wrangler preview.
+- Worker Previews are public by default. To make the staging UI itself private,
+  protect the Preview hostname with Cloudflare Access too.
+
+Official documentation:
+- https://developers.cloudflare.com/workers/previews/
+- https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/
+- https://developers.cloudflare.com/cloudflare-one/access-controls/authenticate-agents/
+
+---
+
 ## 1. Start Evil0ctal on Mac
 
 Install Docker Desktop and make sure it is running. Follow the official installer:
@@ -63,7 +146,7 @@ npm run dev
 
 Open:
 
-**http://localhost:8787/douyin-downloader/?dtk=1**
+**http://localhost:8787/douyin-downloader/**
 
 You will see a private DTK test-token field. Paste DTK_TEST_TOKEN there,
 then paste the sample public post URL:
@@ -73,7 +156,7 @@ https://www.douyin.com/video/7668944508008610298
 Click **Get media**. If metadata is returned, click **Download video** to test
 the actual transfer. Metadata success does not prove video transfer works.
 
-Without the ?dtk=1 query flag, SaveDownloader keeps its existing Vercel flow.
+On this staging branch, add ?dtk=0 to compare the old Vercel flow; production is unchanged.
 
 ### Test the API directly (optional)
 
