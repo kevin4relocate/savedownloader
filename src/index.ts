@@ -429,6 +429,17 @@ function dtkFailure(error: unknown): Response {
   return json({ok:false,error:"DTK preview failed. Inspect the local Docker logs."},502);
 }
 
+async function handleDtkPreviewStatus(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "GET") return json({ok:false,error:"Method not allowed"},405);
+  // Do not expose upstream hostnames, secret values or API key scope information.
+  return json({
+    ok:true,
+    mode:"dtk-preview",
+    backendConfigured:Boolean(env.DTK_API_URL && env.DTK_API_KEY && env.DTK_TEST_TOKEN),
+    rateLimitConfigured:Boolean(env.DOUYIN_BROWSER_RATE_LIMIT)
+  });
+}
+
 async function handleDtkPreviewResolve(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") return json({ok:false,error:"Method not allowed"},405);
   const guard = await authorizeDtkPreview(request, env);
@@ -509,6 +520,7 @@ export default {
         }
       });
     }
+    if (url.pathname === "/api/dtk/status") return handleDtkPreviewStatus(request, env);
     if (url.pathname === "/api/dtk/resolve") return handleDtkPreviewResolve(request, env);
     if (url.pathname === "/api/dtk/download") return handleDtkPreviewDownload(request, env);
     if (url.pathname === "/api/resolve") return handleResolve(request, env);
