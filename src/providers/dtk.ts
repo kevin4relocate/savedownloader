@@ -5,6 +5,8 @@ type RecordValue = Record<string, any>;
 export type DtkPreviewConfig = {
   baseUrl?: string;
   apiKey?: string;
+  accessClientId?: string;
+  accessClientSecret?: string;
   localDev?: boolean;
   fetcher?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
@@ -144,7 +146,20 @@ export async function resolveDouyinDtk(originalUrl: URL, options: DtkPreviewConf
   }
   const requestFetch = options.fetcher || fetch;
   const pause = options.sleep || ((ms: number) => new Promise<void>(done => setTimeout(done, ms)));
-  const headers = { "x-api-key": options.apiKey, "content-type": "application/json", "accept": "application/json" };
+  const clientId = options.accessClientId?.trim() || "";
+  const clientSecret = options.accessClientSecret?.trim() || "";
+  if (Boolean(clientId) !== Boolean(clientSecret)) {
+    throw new DtkPreviewError("DTK Cloudflare Access credentials are incomplete.", 503, "bad-config");
+  }
+  const headers: Record<string, string> = {
+    "x-api-key": options.apiKey,
+    "content-type": "application/json",
+    "accept": "application/json"
+  };
+  if (clientId && clientSecret) {
+    headers["CF-Access-Client-Id"] = clientId;
+    headers["CF-Access-Client-Secret"] = clientSecret;
+  }
 
   async function readJson(url: string, init: RequestInit): Promise<{status: number; body: RecordValue | null}> {
     let response: Response;
