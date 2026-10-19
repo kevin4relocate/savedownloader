@@ -10,6 +10,8 @@ type Env = {
   DOUYIN_BROWSER_TEST_TOKEN?: string;
   DTK_API_URL?: string;
   DTK_API_KEY?: string;
+  DTK_ACCESS_CLIENT_ID?: string;
+  DTK_ACCESS_CLIENT_SECRET?: string;
   DTK_TEST_TOKEN?: string;
   DOUYIN_BROWSER_FALLBACK?: string;
   DOUYIN_BROWSER_RATE_LIMIT?: {
@@ -443,6 +445,8 @@ async function handleDtkPreviewResolve(request: Request, env: Env): Promise<Resp
     const url = new URL(extractFirstUrl(text) ?? text);
     const data = await resolveDouyinDtk(url, {
       baseUrl:env.DTK_API_URL, apiKey:env.DTK_API_KEY,
+      accessClientId:env.DTK_ACCESS_CLIENT_ID,
+      accessClientSecret:env.DTK_ACCESS_CLIENT_SECRET,
       localDev:dtkLocalDev(request)
     });
     return json({ok:true,data});
@@ -461,6 +465,8 @@ async function handleDtkPreviewDownload(request: Request, env: Env): Promise<Res
     const url = new URL(extractFirstUrl(text) ?? text);
     const data = await resolveDouyinDtk(url, {
       baseUrl:env.DTK_API_URL, apiKey:env.DTK_API_KEY,
+      accessClientId:env.DTK_ACCESS_CLIENT_ID,
+      accessClientSecret:env.DTK_ACCESS_CLIENT_SECRET,
       localDev:dtkLocalDev(request)
     });
     if (!data.videoUrl) return json({ok:false,error:"No public video URL returned by DTK."},422);
