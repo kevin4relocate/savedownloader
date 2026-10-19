@@ -8,52 +8,26 @@ of Evil0ctal/Douyin_TikTok_Download_API v5 and a read-only API key.
 
 <!-- Branch-only rebuild after Cloudflare Preview settings were confirmed in dashboard, 2026-10-19. No production configuration changes. -->
 
-## Cloudflare branch preview — test online before merging
+## Evil0ctal integration — optional until a real backend is connected
 
-**Existing legacy branch/version URL (not an isolated Worker Preview yet):**
-https://feature-douyin-evil0ctal-preview-20261019-savedownloader.kevin4relocate.workers.dev/douyin-downloader/
+The user requested merging this branch into main before finishing external DTK
+server setup. The frontend therefore **preserves the existing Vercel Douyin
+resolver by default**, just as before this PR. Evil0ctal remains available for
+explicit opt-in testing with **?dtk=1** on the Douyin downloader page. Do not
+enable it for everyone until a self-hosted DTK instance successfully resolves
+and downloads real public video.
 
-**GitHub PR:** https://github.com/kevin4relocate/savedownloader/pull/40
+Cloudflare's true isolated Worker Preview was verified on 2026-10-19:
+https://feature-douyin-evil0ctal-preview-20261019-savedownloader.kevin4relocate.workers.dev/douyin-downloader/?dtk=1
 
-IMPORTANT CORRECTION (2026-10-19): Cloudflare's dashboard displayed
-"Create your first Preview" even though branch builds and the URL above worked.
-This indicates the existing Worker still uses the older branch *Version URL*
-workflow. A successful branch build is not proof that a true isolated Worker
-Preview has been created. Do not add staging-only credentials or secrets to
-Production while switching.
+GitHub: https://github.com/kevin4relocate/savedownloader/pull/40
 
-### One-time switch to real Worker Previews
-
-In Cloudflare Dashboard:
-1. Workers & Pages > savedownloader > **Settings > Builds**.
-2. Find **Set up Worker Previews**, click **Set up**.
-3. Keep **Production branch** set to `main`; **Enable Preview Builds**.
-4. Review the preview config and select **Preview command**
-   `npx wrangler preview`, not `wrangler versions upload`.
-5. Review the isolation settings (the repo defines a `previews` block in
-   `wrangler.jsonc`), and confirm **Switch to Worker Previews**.
-
-**This switch is irreversible** according to Cloudflare. It replaces the
-old branch Version URL workflow, not your production code.
-
-After switching, push another commit to the existing feature branch, or use
-your Cloudflare build Retry button if it rebuilds with the new Preview command.
-The Preview must then appear in the selector at the top of the Worker page,
-and Cloudflare should comment on PR #40 with its real Preview URL. Only then
-add *Preview-only* secrets. The existing URL may look similar, but use the
-actual Preview URL returned after the switch.
-
-Official:
-https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/
-https://developers.cloudflare.com/workers/previews/get-started/
-
-Do NOT merge to main until a public sample video can be both resolved and
-downloaded.
-
-The standard Douyin page on this branch uses Evil0ctal DTK automatically.
-No special query is needed. Add ?dtk=0 to compare the old Vercel path.
-The page displays a preview-token field and a readiness message from
-GET /api/dtk/status; no secrets are included in the response.
+Use the normal page without any query for the existing downloader flow.
+Use the ?dtk=1 query only when testing an already-configured DTK backend.
+The test-token form appears only in that opt-in mode. The endpoint
+GET /api/dtk/status reports booleans about backend readiness without returning
+credentials. CI and successful Worker Preview deployment do not demonstrate
+that Evil0ctal can fetch the public Douyin video yet.
 
 ### Important: Cloudflare cannot run the full Evil0ctal v5 stack
 
@@ -177,7 +151,7 @@ npm run dev
 
 Open:
 
-**http://localhost:8787/douyin-downloader/**
+**http://localhost:8787/douyin-downloader/?dtk=1**
 
 You will see a private DTK test-token field. Paste DTK_TEST_TOKEN there,
 then paste the sample public post URL:
@@ -187,7 +161,8 @@ https://www.douyin.com/video/7668944508008610298
 Click **Get media**. If metadata is returned, click **Download video** to test
 the actual transfer. Metadata success does not prove video transfer works.
 
-On this staging branch, add ?dtk=0 to compare the old Vercel flow; production is unchanged.
+On main and on staging, the normal Douyin URL uses Vercel by default.
+Add ?dtk=1 to explicitly test the self-hosted Evil0ctal integration.
 
 ### Test the API directly (optional)
 
@@ -218,10 +193,10 @@ are not supported by the in-browser transfer helper.
   per edge location. Allow one for parse and one for download.
 - The preview Worker only accepts a locally hosted HTTP DTK URL when accessed
   locally on localhost / 127.0.0.1. Hosted Workers require an HTTPS DTK origin.
-- Branch Version URLs and real Worker Previews are different. Complete the
-  one-time Worker Previews switch above to isolate branch secrets and bindings.
-  Do not deploy the branch to the Production Worker or copy secrets into git.
-  Hosted metadata tests also require your own HTTPS DTK service.
+- Branch Version URLs and real Worker Previews are different. Cloudflare
+  Worker Previews are now enabled and the isolated branch URL is active.
+  Do not put private credentials in git; hosted DTK requests require your own
+  authorized HTTPS DTK service.
 - This branch does not automatically expose a running Docker service on the Mac
   to Cloudflare on the internet.
 
@@ -234,4 +209,6 @@ node --test tests/douyin-ui-flow.test.mjs
 npx wrangler deploy --dry-run --outdir /tmp/savedownloader-dtk-preview-build
 ~~~
 
-Only a real DTK instance can verify your sample video's availability.
+Only a real DTK instance can verify your sample video's availability. The
+production user interface keeps its existing Vercel flow until Evil0ctal is
+proven working and the operator explicitly chooses to enable it.
