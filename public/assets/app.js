@@ -21,7 +21,7 @@ if(form){
     const title=document.createElement('strong');
     title.textContent='Evil0ctal DTK v5 — private branch preview';
     const text=document.createElement('p');
-    text.textContent='Enter the DTK preview test token configured in your Worker. The key to the DTK service stays on the server. Tokens are never stored.';
+    text.textContent='Checking whether the Cloudflare Preview is connected to a DTK backend…';
     const label=document.createElement('label');
     label.textContent='DTK preview token';
     label.htmlFor='dtk-preview-token';
@@ -34,6 +34,21 @@ if(form){
     label.append(dtkPreviewTokenInput);
     panel.append(title,text,label);
     form.after(panel);
+    fetch('/api/dtk/status',{cache:'no-store',signal:AbortSignal.timeout(6500)})
+      .then(response=>response.json())
+      .then(details=>{
+        if(details?.mode!=='dtk-preview')throw new Error('Unexpected preview response');
+        if(!details.backendConfigured){
+          text.textContent='Cloudflare Preview is online, but the Evil0ctal backend is not connected yet. Configure the Preview-only DTK secrets in Cloudflare before testing a video.';
+        }else if(!details.rateLimitConfigured){
+          text.textContent='Evil0ctal is configured, but the isolated preview rate limiter is missing. Contact the Worker administrator.';
+        }else{
+          text.textContent='Evil0ctal backend settings are present. Enter the private preview test token to check a public Douyin video. Credentials are never stored.';
+        }
+      })
+      .catch(()=>{
+        text.textContent='Could not verify DTK preview configuration. Try refreshing this staging page.';
+      });
   }
   const dtkPreviewToken=()=>dtkPreviewTokenInput?.value.trim()||'';
 
