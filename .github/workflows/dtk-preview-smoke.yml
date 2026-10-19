@@ -1,0 +1,66 @@
+name: Cloudflare DTK Branch Preview Smoke Test
+on:
+  push:
+    branches:
+      - feature/douyin-evil0ctal-preview-20261019
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Smoke test isolated Cloudflare DTK Preview without upstream requests
+        run: |
+          node --input-type=module <<'NODE'
+          const root = "https://feature-douyin-evil0ctal-preview-20261019-savedownloader.kevin4relocate.workers.dev";
+          const get = (path, options = {}) =>
+            fetch(root + path, {...options, signal: AbortSignal.timeout(15000)});
+          const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+          let status;
+          let ready = false;
+          for (let attempt = 0; attempt < 10; attempt++) {
+            try {
+              const response = await get("/api/dtk/status");
+              if (response.ok) {
+                status = await response.json();
+                if (status.mode === "dtk-preview") {
+                  ready = true;
+                  break;
+                }
+              }
+            } catch {}
+            await sleep(3000);
+          }
+          if (!ready) throw new Error("Branch Preview not reachable with the expected status handler");
+          console.log("PREVIEW STATUS:",JSON.stringify(status));
+          const page=await get("/douyin-downloader/");
+          if (page.status!==200) throw new Error("Preview page HTTP "+page.status);
+          const html=await page.text();
+          if (!html.includes("/assets/app.js")) throw new Error("Preview page missing main JS");
+          const script=await get("/assets/app.js");
+          if (script.status!==200) throw new Error("Preview JS HTTP "+script.status);
+          const js=await script.text();
+          if (!js.includes("Evil0ctal DTK v5") || !js.includes("/api/dtk/resolve") ||
+              !js.includes("/api/dtk/status")) throw new Error("Wrong or stale staging JS");
+          if (js.includes("DTK_API_KEY=")) throw new Error("Server-only key name assigned in browser JS");
+          console.log("PREVIEW UI:",JSON.stringify({pageHttp:page.status,jsHttp:script.status,
+            dtkUiPresent:true}));
+          const unauthorized=await get("/api/dtk/resolve",{
+            method:"POST",headers:{"content-type":"application/json"},
+            body:JSON.stringify({url:"https://www.douyin.com/video/7668944508008610298"})
+          });
+          if (unauthorized.status!==403) throw new Error("Missing preview token gate, HTTP "+unauthorized.status);
+          const production=await fetch("https://savedownloader.com/assets/app.js",{
+            signal:AbortSignal.timeout(15000)});
+          if (!production.ok) throw new Error("Production frontend not reachable");
+          const prodJs=await production.text();
+          if (prodJs.includes("dtk-preview-panel") || prodJs.includes("/api/dtk/resolve"))
+            throw new Error("Production unexpectedly contains DTK staging UI");
+          console.log("SAFETY:",JSON.stringify({unauthStatus:unauthorized.status,
+            productionUnaffected:true,backendConfigured:status.backendConfigured,
+            rateLimitConfigured:status.rateLimitConfigured}));
+          NODE
