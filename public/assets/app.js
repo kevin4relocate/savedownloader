@@ -8,12 +8,10 @@ if(form){
   const TIKTOK_DOWNLOAD_API=VERCEL_BASE+'/api/download';
   const DOUYIN_RESOLVE_API=VERCEL_BASE+'/api/douyin-resolve';
   const DOUYIN_DOWNLOAD_API=VERCEL_BASE+'/api/douyin-download';
-  // Opt-in branch/local-only UI. No DTK credentials or preview token are saved
-  // in localStorage, cookies or URL query parameters.
-  // On this isolated Git branch, the standard Douyin preview page tests DTK.
-  // Add ?dtk=0 only to compare against the old Vercel path.
+  // Evil0ctal is opt-in on all environments. Do not make production depend
+  // on an unconfigured external Docker backend. Secrets are never browser-side.
   const isDtkPreview=/^\/douyin-downloader\/?$/.test(location.pathname)&&
-    new URLSearchParams(location.search).get('dtk')!=='0';
+    new URLSearchParams(location.search).get('dtk')==='1';
   let dtkPreviewTokenInput=null;
   if(isDtkPreview){
     const panel=document.createElement('div');
