@@ -6,6 +6,8 @@ This is a private test integration. It does not replace the main website's
 Douyin, TikTok or Instagram flows. It requires your **own running instance**
 of Evil0ctal/Douyin_TikTok_Download_API v5 and a read-only API key.
 
+<!-- Branch-only rebuild after Cloudflare Preview settings were confirmed in dashboard, 2026-10-19. No production configuration changes. -->
+
 ## Cloudflare branch preview — test online before merging
 
 **Existing legacy branch/version URL (not an isolated Worker Preview yet):**
