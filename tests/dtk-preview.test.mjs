@@ -142,12 +142,54 @@ test('preview download fetches matching media file and streams it',async()=>{
   });
 });
 
-test('only explicit query ?dtk=1 shows token field; normal Vercel flow remains',()=>{
+test('staging Douyin page defaults to DTK and ?dtk=0 compares the Vercel baseline',()=>{
   const app=read('public/assets/app.js');
-  assert.match(app,/new URLSearchParams\(location.search\)\.get\('dtk'\)==='1'/);
+  assert.match(app,/new URLSearchParams\(location.search\)\.get\('dtk'\)!=='0'/);
   assert.match(app,/\/api\/dtk\/resolve/);
   assert.match(app,/\/api\/dtk\/download/);
   assert.match(app,/dtkPreviewTokenInput\.type='password'/);
   assert.match(app,/DOUYIN_RESOLVE_API=VERCEL_BASE/);
   assert.ok(!app.includes(key));
+});
+
+
+test('DTK Cloudflare Access service token is forwarded only as server-side request headers',async()=>{
+  const clientId='example-client-id.access';
+  const clientSecret='example-client-secret';
+  let authCalled=false;
+  const result=await resolveDouyinDtk(new URL(post),{
+    baseUrl:'https://dtk.example.com/',apiKey:key,
+    accessClientId:clientId,accessClientSecret:clientSecret,
+    fetcher:async(_url,init)=>{
+      assert.equal(init.headers['CF-Access-Client-Id'],clientId);
+      assert.equal(init.headers['CF-Access-Client-Secret'],clientSecret);
+      assert.equal(init.headers['x-api-key'],key);
+      authCalled=true;
+      return valid.clone();
+    }
+  });
+  assert.ok(authCalled);
+  assert.equal(result.id,id);
+  assert.ok(!JSON.stringify(result).includes(clientSecret));
+});
+test('DTK refuses half-configured Cloudflare Access tokens before network calls',async()=>{
+  let contacted=false;
+  await assert.rejects(resolveDouyinDtk(new URL(post),{
+    baseUrl:'https://dtk.example.com/',apiKey:key,
+    accessClientId:'id-only',
+    fetcher:async()=>{contacted=true;return valid.clone()}
+  }),e=>e.reason==='bad-config');
+  assert.equal(contacted,false);
+});
+test('Cloudflare staging configuration is independently rate-limited and has no production routes',()=>{
+  const jsonc=JSON.parse(read('wrangler.jsonc'));
+  assert.equal(jsonc.name,'savedownloader');
+  assert.ok(jsonc.previews);
+  assert.equal(jsonc.previews.vars.DTK_PREVIEW_MODE,'1');
+  assert.notEqual(jsonc.ratelimits[0].namespace_id,jsonc.previews.ratelimits[0].namespace_id);
+  assert.equal(jsonc.previews.ratelimits[0].name,'DOUYIN_BROWSER_RATE_LIMIT');
+  assert.ok(!('routes' in jsonc.previews));
+  const manifest=JSON.parse(read('package.json'));
+  assert.ok(Number(manifest.devDependencies.wrangler.split('.')[1])>=136);
+  assert.equal(manifest.scripts.preview,'wrangler preview');
 });
