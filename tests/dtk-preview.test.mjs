@@ -142,13 +142,14 @@ test('preview download fetches matching media file and streams it',async()=>{
   });
 });
 
-test('staging Douyin page defaults to DTK and ?dtk=0 compares the Vercel baseline',()=>{
+test('production Douyin stays on Vercel unless ?dtk=1 explicitly enables the external DTK preview',()=>{
   const app=read('public/assets/app.js');
-  assert.match(app,/new URLSearchParams\(location.search\)\.get\('dtk'\)!=='0'/);
+  assert.match(app,/new URLSearchParams\(location.search\)\.get\('dtk'\)==='1'/);
   assert.match(app,/\/api\/dtk\/resolve/);
   assert.match(app,/\/api\/dtk\/download/);
   assert.match(app,/dtkPreviewTokenInput\.type='password'/);
   assert.match(app,/DOUYIN_RESOLVE_API=VERCEL_BASE/);
+  assert.match(app,/requestedPlatform==='douyin'\?DOUYIN_RESOLVE_API:'\/api\/resolve'/);
   assert.ok(!app.includes(key));
 });
 
